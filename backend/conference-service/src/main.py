@@ -1,15 +1,12 @@
 from fastapi import FastAPI
-from src.conference.router import router as conference_router
 from src.database import Base, engine
+from src.conference import models
+from src.conference.router import router as conference_router
+from src.conference.models import Conference
+import time
 
-# tạo bảng DB
+app = FastAPI(title="Conference Service")
+
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="Conference Service",
-    description="Quản lý hội nghị khoa học UTH",
-    version="1.0.0"
-)
-
-# gắn router
 app.include_router(conference_router)

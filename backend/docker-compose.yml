@@ -1,0 +1,24 @@
+services:
+  uth_mysql:
+    image: mysql:8.0
+    container_name: uth_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: uth_conference
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  conference-service:
+    build:
+      context: ./conference-service
+      dockerfile: Dockerfile
+    container_name: conference-service
+    ports:
+      - "8002:8000"
+    depends_on:
+      - uth_mysql
+
+volumes:
+  mysql_data:
