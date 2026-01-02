@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File
 from sqlalchemy.orm import Session
-
+from datetime import datetime
 from src.database import get_db
 from src.conference.topics.models import Topic
 from src.conference.topics.schemas import (
     TopicCreate, TopicUpdate, TopicResponse
 )
+from src.conference.models import Conference
 from src.conference.tracks.models import Track
 from fastapi import UploadFile, File, Form
 import os
@@ -27,11 +28,52 @@ def create_topic(
     picture: UploadFile = File(None),
     db: Session = Depends(get_db)
 ):
-    # check track tồn tại
-    track = db.query(Track).filter(Track.id == track_id).first()
-    if not track:
-        raise HTTPException(status_code=404, detail="Track not found")
+    # ========================
+    # CHECK TRACK TỒN TẠI
+    # ========================
+    track = db.query(Track).filter(
+        Track.id == track_id
+    ).first()
 
+    if not track:
+        raise HTTPException(
+            status_code=404,
+            detail="Track not found"
+        )
+
+    # ========================
+    # CHECK CONFERENCE TỒN TẠI
+    # ========================
+    conference = db.query(Conference).filter(
+        Conference.id == track.conference_id
+    ).first()
+
+    if not conference:
+        raise HTTPException(
+            status_code=404,
+            detail="Conference not found"
+        )
+
+    # ========================
+    # CHECK THỜI GIAN HỘI NGHỊ (NV3)
+    # ========================
+    now = datetime.now().date()
+
+    if now < conference.start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Conference has not started yet. Cannot create topic."
+        )
+
+    if now > conference.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Conference has ended. Cannot create topic."
+        )
+
+    # ========================
+    # HANDLE PICTURE
+    # ========================
     picture_path = None
     if picture:
         os.makedirs("src/static/topic_pictures", exist_ok=True)
@@ -42,6 +84,9 @@ def create_topic(
 
         picture_path = f"topic_pictures/{picture.filename}"
 
+    # ========================
+    # CREATE TOPIC
+    # ========================
     topic = Topic(
         name=name,
         description=description,
@@ -64,7 +109,6 @@ def create_topic(
             "picture": topic.picture
         }
     }
-
 # ========================
 # GET ALL TOPICS
 # ========================

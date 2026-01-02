@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
+from datetime import datetime, time 
 from src.database import get_db
 from src.conference.tracks.models import Track
 from src.conference.tracks.schemas import (
@@ -29,7 +29,9 @@ def create_track(
     logo: UploadFile = File(None),
     db: Session = Depends(get_db)
 ):
-    # ✅ CHECK CONFERENCE TỒN TẠI TRƯỚC
+    # =========================
+    # CHECK CONFERENCE TỒN TẠI
+    # =========================
     conference = db.query(Conference).filter(
         Conference.id == conference_id
     ).first()
@@ -40,6 +42,43 @@ def create_track(
             detail="Conference not found"
         )
 
+    # =========================
+    # CHECK THỜI GIAN HỘI NGHỊ (NV3)
+    # =========================
+    now = datetime.now()
+
+    start = conference.start_date
+    end = conference.end_date
+
+    if not start or not end:
+        raise HTTPException(
+            status_code=400,
+            detail="Conference has no time configured"
+        )
+
+    # ⚠️ ÉP date → datetime
+    if not isinstance(start, datetime):
+        start = datetime.combine(start, time.min)
+
+    if not isinstance(end, datetime):
+        end = datetime.combine(end, time.max)
+
+    if now < start:
+        raise HTTPException(
+            status_code=400,
+            detail="Conference has not started yet"
+        )
+
+    if now > end:
+        raise HTTPException(
+            status_code=400,
+            detail="Conference has already ended"
+        )
+
+
+    # =========================
+    # HANDLE LOGO
+    # =========================
     logo_path = None
     if logo:
         os.makedirs("src/static/track_logos", exist_ok=True)
@@ -50,6 +89,9 @@ def create_track(
 
         logo_path = f"track_logos/{logo.filename}"
 
+    # =========================
+    # CREATE TRACK
+    # =========================
     track = Track(
         name=name,
         description=description,
