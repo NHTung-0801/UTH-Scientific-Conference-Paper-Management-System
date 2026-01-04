@@ -20,8 +20,8 @@ class Paper(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
     abstract = Column(Text, nullable=False)
+    keywords = Column(String(255), nullable=True, comment="Từ khóa bài báo")
 
-    # khóa ngoại logic
     conference_id = Column(Integer, nullable=False)
     track_id = Column(Integer, nullable=False)
     submitter_id = Column(Integer, nullable=False)
@@ -29,13 +29,10 @@ class Paper(Base):
     is_blind_mode = Column(Boolean, default=True)
     status = Column(Enum(PaperStatus), default=PaperStatus.SUBMITTED)
 
-    # Ngày nộp bản ghi
     submitted_at = Column(DateTime, default=datetime.utcnow)
 
-    # Ngày tạo bản ghi
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # QUAN HỆ
     # 1 paper có nhiều versions
     versions = relationship("PaperVersion", back_populates="paper", cascade="all, delete-orphan")
     # 1 paper có nhiều authors
@@ -55,7 +52,7 @@ class PaperAuthor(Base):
     organization = Column(String(255), nullable=True)
 
     is_corresponding = Column(Boolean, default=False)
-    user_id = Column(Integer, nullable=True)  # Nếu tác giả là user đã đăng ký
+    user_id = Column(Integer, nullable=True) 
 
     paper = relationship("Paper", back_populates="authors")
 
@@ -66,7 +63,7 @@ class PaperVersion(Base):
     paper_id = Column(Integer, ForeignKey("papers.id"))
 
     version_number = Column(Integer, nullable=False)
-    file_url = Column(String(500), nullable=False) # Đường dẫn file trên ổ cứng
+    file_url = Column(String(500), nullable=False)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     is_camera_ready = Column(Boolean, default=False)
@@ -79,6 +76,6 @@ class PaperTopic(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     paper_id = Column(Integer, ForeignKey("papers.id"))
-    topic_id = Column(Integer, nullable=False)  # Có bảng topics riêng
+    topic_id = Column(Integer, nullable=False)
 
     paper = relationship("Paper", back_populates="topics")

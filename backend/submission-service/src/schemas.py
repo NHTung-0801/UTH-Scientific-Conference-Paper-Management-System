@@ -61,6 +61,7 @@ class PaperVersionResponse(BaseModel):
 class PaperBase(BaseModel):
     title: str
     abstract: str
+    keywords: Optional[str] = None
     conference_id: int
     track_id: int
     is_blind_mode: bool = True

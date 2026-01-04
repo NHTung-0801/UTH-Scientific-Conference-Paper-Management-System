@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
 import json
+import httpx
 
 from .. import database, crud, schemas, exceptions
+from ..config import settings
 from ..utils.file_handler import save_paper_file, delete_paper_version_file
 
 router = APIRouter(
@@ -11,10 +13,30 @@ router = APIRouter(
     tags=["Submissions"]
 )
 
+
+# --- HÀM GỌI API ---
+def call_notification_service_task(payload: dict):
+
+    notification_url = settings.NOTIFICATION_SERVICE_URL 
+    
+    try:
+        with httpx.Client() as client:
+            response = client.post(notification_url, json=payload)
+            
+            if response.status_code == 201:
+                print(f" [Submission Service] Notification sent for Paper #{payload['paper_id']}")
+            else:
+                print(f" [Submission Service] Failed to send notification: {response.text}")
+                
+    except Exception as e:
+        print(f" [Submission Service] Connection Error: {str(e)}")
+
+
 # API nộp bài
 @router.post("/", response_model=schemas.PaperResponse, status_code=status.HTTP_201_CREATED)
 
 def submit_paper(
+    background_tasks: BackgroundTasks,
     metadata: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db),
@@ -64,6 +86,33 @@ def submit_paper(
         
         db.commit() 
         db.refresh(paper)
+
+
+        # Tìm email người nhận
+        recipient_email = None
+        recipient_name = "Author"
+
+        if paper_data.authors:
+            recipient_email = paper_data.authors[0].email
+            recipient_name = paper_data.authors[0].full_name
+            
+            for author in paper_data.authors:
+                if author.is_corresponding:
+                    recipient_email = author.email
+                    recipient_name = author.full_name
+                    break
+
+        notification_payload = {
+            "receiver_id": submitter_id,        
+            "receiver_email": recipient_email,  
+            "receiver_name": recipient_name,    
+            "paper_id": paper.id,
+            "paper_title": paper.title,
+            "subject": f"Xác nhận nộp bài: {paper.title}",
+            "body": f"Bài báo #{paper.id} đã được nộp thành công vào hệ thống. Vui lòng chờ phản hồi."
+        }
+
+        background_tasks.add_task(call_notification_service_task, notification_payload)
         
         return paper
 
