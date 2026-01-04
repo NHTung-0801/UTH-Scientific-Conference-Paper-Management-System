@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # --- Identity Service ---
+  identity-service:
+    build: ./backend/identity-service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/identity-service:/app
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # --- Conference Service ---
+  conference-service:
+    build: ./backend/conference-service
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend/conference-service:/app
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
+
+  # --- Submission Service (MỚI THÊM) ---
+  submission-service:
+    build: ./backend/submission-service
+    ports:
+      - "8002:8002"  # Map port 8002 máy thật -> 8002 container
+    volumes:
+      # Mount code để sửa code bên ngoài là bên trong tự cập nhật (Hot-reload)
+      - ./backend/submission-service:/app
+      # Tránh mount đè folder venv hoặc uploads nếu không cần thiết, 
+      # nhưng quan trọng nhất là mount code src
+    environment:
+      - DATABASE_URL=sqlite:///./submission.db
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload
