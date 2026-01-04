@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # 1. Cấu hình Database (MySQL)
     # Định dạng: mysql+pymysql://<username>:<password>@<host>:<port>/<db_name>
     DATABASE_URL: str = "mysql+pymysql://root:root@localhost:3306/submission_db"
+    NOTIFICATION_SERVICE_URL: str = "http://localhost:8001/notifications/send" 
 
     # 2. Cấu hình Bảo mật (Dùng để xác thực Token từ Identity Service gửi sang)
     SECRET_KEY: str = "SECRET_KEY_CHANGE_ME"  # Phải khớp với Identity Service

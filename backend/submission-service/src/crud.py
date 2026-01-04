@@ -15,6 +15,7 @@ def create_paper(
     db_paper = models.Paper(
         title=paper_data.title,
         abstract=paper_data.abstract,
+        keywords=paper_data.keywords,
         conference_id=paper_data.conference_id,
         track_id=paper_data.track_id,
         submitter_id=submitter_id,

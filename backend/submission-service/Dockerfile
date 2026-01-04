@@ -1,21 +1,27 @@
-# Sử dụng Python 3.9 (hoặc phiên bản bạn đang dùng)
-FROM python:3.9-slim
+# 1. Chọn Base Image
+FROM python:3.10-slim
 
-# Thiết lập thư mục làm việc trong container
+# 2. Thiết lập thư mục làm việc
 WORKDIR /app
 
-# Copy file requirements.txt vào container trước
-COPY requirements.txt .
+# 3. Cài đặt các gói hệ thống cần thiết (nếu dùng thư viện xử lý PDF phức tạp)
+# Ở đây ta cài cơ bản, nếu sau này dùng thư viện C++ thì thêm vào
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
-# Cài đặt các thư viện
+# 4. Cài thư viện Python
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy toàn bộ mã nguồn vào container
-COPY . .
+# 5. Copy mã nguồn
+COPY src/ ./src/
+COPY .env .
 
-# Mở port 8002 (port mà service này sẽ chạy)
-EXPOSE 8002
+# 6. Tạo thư mục uploads (Quan trọng)
+# Để tránh lỗi "Folder not found" khi lưu file
+RUN mkdir -p uploads
 
-# Lệnh chạy server khi container khởi động
-# Lưu ý: host 0.0.0.0 là bắt buộc để truy cập được từ bên ngoài container
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+# 7. Mở port 8000
+EXPOSE 8000
+
+# 8. Lệnh chạy server
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
