@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # backend/submission-service/src/utils/file_handler.py
 import os
 
@@ -16,7 +16,6 @@ def file_exists(filename: str) -> bool:
     """Kiểm tra file có tồn tại trên ổ cứng không"""
     path = get_file_path(filename)
     return os.path.exists(path)
-=======
 import os
 import shutil
 from fastapi import UploadFile, HTTPException
@@ -115,4 +114,3 @@ def delete_paper_version_file(
             print(f"Rollback: Deleted directory {version_dir}")
         except Exception as e:
             print(f"Failed to delete directory {version_dir}: {e}")
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161

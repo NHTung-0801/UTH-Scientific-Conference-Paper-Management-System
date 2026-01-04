@@ -1,9 +1,8 @@
-<<<<<<< HEAD
+
 from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from src.database import Base
 from datetime import datetime
-=======
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -18,14 +17,10 @@ class PaperStatus(str, enum.Enum):
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
 
-
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
-
 class Paper(Base):
     __tablename__ = "papers"
 
     id = Column(Integer, primary_key=True, index=True)
-<<<<<<< HEAD
     title = Column(String, nullable=False)
     abstract = Column(Text, nullable=False)
     conference_id = Column(Integer, nullable=False) 
@@ -48,7 +43,6 @@ class PaperAuthor(Base):
     # --- QUAN TRỌNG: Đã thêm cột này ---
     display_order = Column(Integer, default=1) 
     
-=======
     title = Column(String(255), nullable=False)
     abstract = Column(Text, nullable=False)
 
@@ -87,13 +81,10 @@ class PaperAuthor(Base):
 
     is_corresponding = Column(Boolean, default=False)
     user_id = Column(Integer, nullable=True)  # Nếu tác giả là user đã đăng ký
-
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
     paper = relationship("Paper", back_populates="authors")
 
 class PaperVersion(Base):
     __tablename__ = "paper_versions"
-<<<<<<< HEAD
     
     id = Column(Integer, primary_key=True)
     paper_id = Column(Integer, ForeignKey("papers.id"))
@@ -102,7 +93,6 @@ class PaperVersion(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     paper = relationship("Paper", back_populates="versions")
-=======
 
     id = Column(Integer, primary_key=True, index=True)
     paper_id = Column(Integer, ForeignKey("papers.id"))
@@ -124,4 +114,3 @@ class PaperTopic(Base):
     topic_id = Column(Integer, nullable=False)  # Có bảng topics riêng
 
     paper = relationship("Paper", back_populates="topics")
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161

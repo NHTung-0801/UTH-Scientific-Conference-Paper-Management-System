@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -25,7 +25,6 @@ class PaperDetailResponse(BaseModel):
 
     class Config:
         from_attributes = True
-=======
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime
@@ -115,4 +114,3 @@ class PaperResponse(PaperBase):
 # Thông điệp phản hồi chung
 class MessageResponse(BaseModel):
     message: str
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161

@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # backend/submission-service/src/database.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -16,7 +16,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # Dependency để lấy database session (Dùng trong router)
-=======
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from src.config import settings
@@ -31,7 +30,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
 def get_db():
     db = SessionLocal()
     try:

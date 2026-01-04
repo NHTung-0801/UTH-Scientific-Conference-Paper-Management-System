@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 import os
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -85,7 +85,6 @@ def download_submission_file(
         filename=f"Paper_{paper_id}_v{version}.pdf",
         media_type="application/pdf"
     )
-=======
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List
@@ -215,4 +214,3 @@ def get_submission_detail(
         
     except exceptions.NotAuthorizedError as e:
         raise HTTPException(status_code=403, detail=str(e))
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
