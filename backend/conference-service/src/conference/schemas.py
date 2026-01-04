@@ -6,6 +6,12 @@ class ConferenceCreate(BaseModel):
     description: str | None = None
 
 
+class ConferenceUpdate(BaseModel):
+    name: str | None = None
+    logo: str | None = None
+    description: str | None = None
+
+
 class ConferenceResponse(BaseModel):
     id: int
     name: str
@@ -15,3 +21,12 @@ class ConferenceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ConferenceUpdateResult(BaseModel):
+    before_update: ConferenceResponse
+    after_update: ConferenceResponse
+
+class ConferenceDeleteResult(BaseModel):
+    message: str
+    deleted_conference: ConferenceResponse
