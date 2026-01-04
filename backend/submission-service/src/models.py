@@ -1,6 +1,7 @@
+
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean, Enum
 from sqlalchemy.orm import relationship
-from datetime import datetime
 from .database import Base
 import enum
 
@@ -12,12 +13,32 @@ class PaperStatus(str, enum.Enum):
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
 
-
-
 class Paper(Base):
     __tablename__ = "papers"
 
     id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    abstract = Column(Text, nullable=False)
+    conference_id = Column(Integer, nullable=False) 
+    submitter_id = Column(Integer, nullable=False)  
+    status = Column(String, default="submitted")    
+    
+    # Relationships
+    authors = relationship("PaperAuthor", back_populates="paper")
+    versions = relationship("PaperVersion", back_populates="paper")
+
+class PaperAuthor(Base):
+    __tablename__ = "paper_authors"
+    
+    id = Column(Integer, primary_key=True)
+    paper_id = Column(Integer, ForeignKey("papers.id"))
+    full_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    organization = Column(String, nullable=False)
+    
+    # --- QUAN TRỌNG: Đã thêm cột này ---
+    display_order = Column(Integer, default=1) 
+    
     title = Column(String(255), nullable=False)
     abstract = Column(Text, nullable=False)
     keywords = Column(String(255), nullable=True, comment="Từ khóa bài báo")
@@ -58,6 +79,14 @@ class PaperAuthor(Base):
 
 class PaperVersion(Base):
     __tablename__ = "paper_versions"
+    
+    id = Column(Integer, primary_key=True)
+    paper_id = Column(Integer, ForeignKey("papers.id"))
+    version_number = Column(Integer, nullable=False) 
+    file_path = Column(String, nullable=False)       
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    paper = relationship("Paper", back_populates="versions")
 
     id = Column(Integer, primary_key=True, index=True)
     paper_id = Column(Integer, ForeignKey("papers.id"))
