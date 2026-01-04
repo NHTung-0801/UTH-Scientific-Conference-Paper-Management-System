@@ -1,5 +1,7 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
-python-multipart
-python-jose[cryptography]
+pymysql
+pydantic
+pydantic-settings
+cryptography
