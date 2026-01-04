@@ -1,12 +1,31 @@
+<<<<<<< HEAD
 from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from src.database import Base
 from datetime import datetime
+=======
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean, Enum
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from .database import Base
+import enum
+
+
+# Định nghĩa Enum
+class PaperStatus(str, enum.Enum):
+    SUBMITTED = "SUBMITTED"
+    UNDER_REVIEW = "UNDER_REVIEW"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+
+
+>>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
 
 class Paper(Base):
     __tablename__ = "papers"
 
     id = Column(Integer, primary_key=True, index=True)
+<<<<<<< HEAD
     title = Column(String, nullable=False)
     abstract = Column(Text, nullable=False)
     conference_id = Column(Integer, nullable=False) 
@@ -29,10 +48,52 @@ class PaperAuthor(Base):
     # --- QUAN TRỌNG: Đã thêm cột này ---
     display_order = Column(Integer, default=1) 
     
+=======
+    title = Column(String(255), nullable=False)
+    abstract = Column(Text, nullable=False)
+
+    # khóa ngoại logic
+    conference_id = Column(Integer, nullable=False)
+    track_id = Column(Integer, nullable=False)
+    submitter_id = Column(Integer, nullable=False)
+
+    is_blind_mode = Column(Boolean, default=True)
+    status = Column(Enum(PaperStatus), default=PaperStatus.SUBMITTED)
+
+    # Ngày nộp bản ghi
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+
+    # Ngày tạo bản ghi
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # QUAN HỆ
+    # 1 paper có nhiều versions
+    versions = relationship("PaperVersion", back_populates="paper", cascade="all, delete-orphan")
+    # 1 paper có nhiều authors
+    authors = relationship("PaperAuthor", back_populates="paper", cascade="all, delete-orphan")
+    # 1 paper có nhiều topics
+    topics = relationship("PaperTopic", back_populates="paper", cascade="all, delete-orphan")
+
+
+class PaperAuthor(Base):
+    __tablename__ = "paper_authors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    paper_id = Column(Integer, ForeignKey("papers.id"))
+
+    full_name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False)
+    organization = Column(String(255), nullable=True)
+
+    is_corresponding = Column(Boolean, default=False)
+    user_id = Column(Integer, nullable=True)  # Nếu tác giả là user đã đăng ký
+
+>>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
     paper = relationship("Paper", back_populates="authors")
 
 class PaperVersion(Base):
     __tablename__ = "paper_versions"
+<<<<<<< HEAD
     
     id = Column(Integer, primary_key=True)
     paper_id = Column(Integer, ForeignKey("papers.id"))
@@ -41,3 +102,26 @@ class PaperVersion(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     paper = relationship("Paper", back_populates="versions")
+=======
+
+    id = Column(Integer, primary_key=True, index=True)
+    paper_id = Column(Integer, ForeignKey("papers.id"))
+
+    version_number = Column(Integer, nullable=False)
+    file_url = Column(String(500), nullable=False) # Đường dẫn file trên ổ cứng
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_camera_ready = Column(Boolean, default=False)
+    is_anonymous = Column(Boolean, default=True)
+
+    paper = relationship("Paper", back_populates="versions")
+
+class PaperTopic(Base):
+    __tablename__ = "paper_topics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    paper_id = Column(Integer, ForeignKey("papers.id"))
+    topic_id = Column(Integer, nullable=False)  # Có bảng topics riêng
+
+    paper = relationship("Paper", back_populates="topics")
+>>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
