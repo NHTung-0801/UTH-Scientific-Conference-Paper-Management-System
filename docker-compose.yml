@@ -1,0 +1,58 @@
+services:
+
+  submission-db:
+    image: mysql:8.0
+    container_name: submission_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: submission_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - submission_db_data:/var/lib/mysql
+
+  submission-service:
+    build: ./backend/submission-service
+    container_name: submission_service
+    restart: on-failure
+    ports:
+      - "8000:8000"
+    depends_on:
+      - submission-db
+    env_file:
+      - ./backend/submission-service/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://root:root@submission-db:3306/submission_db
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000/notifications/send
+    volumes:
+      - ./backend/submission-service/uploads:/app/uploads
+
+  notification-db:
+    image: mysql:8.0
+    container_name: notification_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: notification_db
+    ports:
+      - "3308:3306"
+    volumes:
+      - notification_db_data:/var/lib/mysql
+
+  notification-service:
+    build: ./backend/notification-service
+    container_name: notification_service
+    restart: on-failure
+    ports:
+      - "8001:8000"
+    depends_on:
+      - notification-db
+    env_file:
+      - ./backend/notification-service/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
+
+volumes:
+  submission_db_data:
+  notification_db_data:
