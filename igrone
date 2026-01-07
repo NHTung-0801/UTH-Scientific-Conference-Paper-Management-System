@@ -1,0 +1,88 @@
+##################################
+# ===== Python =====
+##################################
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+##################################
+# ===== Python Virtual Env =====
+##################################
+venv/
+.venv/
+env/
+ENV/
+venv*/
+*/venv/
+*/.venv/
+*/env/
+*/ENV/
+
+# Cụ thể theo project
+backend/review-service/venv312/
+backend/submission-service/venv/
+frontend/venv/
+
+##################################
+# ===== Environment variables =====
+##################################
+.env
+*.env
+
+##################################
+# ===== Databases =====
+##################################
+*.db
+*.sqlite
+*.sqlite3
+
+# Cụ thể theo project
+backend/review-service/review.db
+backend/submission-service/submission.db
+
+##################################
+# ===== Upload / Generated files =====
+##################################
+uploads/
+backend/submission-service/uploads/
+
+##################################
+# ===== Logs =====
+##################################
+*.log
+logs/
+
+##################################
+# ===== Node / Frontend =====
+##################################
+node_modules/
+dist/
+build/
+
+##################################
+# ===== Docker =====
+##################################
+*.tar
+docker-data/
+docker-volume/
+
+##################################
+# ===== IDE / Editor =====
+##################################
+.vscode/
+.idea/
+*.iml
+
+##################################
+# ===== OS =====
+##################################
+.DS_Store
+Thumbs.db
+
+##################################
+# ===== Misc =====
+##################################
+coverage/
+.cache/
+pytest_cache/
