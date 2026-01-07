@@ -1,12 +1,14 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
-<<<<<<< HEAD
 python-multipart
 python-jose[cryptography]
 aiofiles
-=======
 pymysql
 python-multipart
 pydantic
->>>>>>> a4399b3c71fb9a397bf2621bf4d07e74019f8161
+pydantic[email]
+pydantic-settings
+python-dotenv
+httpx
+cryptography
