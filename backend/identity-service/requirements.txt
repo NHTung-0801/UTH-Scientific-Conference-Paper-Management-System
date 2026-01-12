@@ -6,4 +6,4 @@ pydantic
 pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
-bcrypt==3.2.0   <-- Thêm dòng này vào để khóa phiên bản
+bcrypt==3.2.0

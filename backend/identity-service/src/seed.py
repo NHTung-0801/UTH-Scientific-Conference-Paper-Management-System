@@ -5,47 +5,66 @@ from src.auth import get_password_hash
 def seed():
     db = SessionLocal()
     try:
-        # 1. Đảm bảo các Role đã tồn tại trước
-        # (Lấy role từ DB ra để gán cho user)
-        role_admin = db.query(Role).filter(Role.role_name == "ADMIN").first()
-        role_author = db.query(Role).filter(Role.role_name == "AUTHOR").first()
+        print("--- Starting Seed Data ---")
         
-        # Nếu chưa có Role thì tạo mới (phòng trường hợp init_db chưa chạy)
-        if not role_admin:
-            role_admin = Role(role_name="ADMIN")
-            db.add(role_admin)
+        # 1. DANH SÁCH ROLE CẦN CÓ (Viết đúng theo Database: Chữ đầu hoa)
+        # Nếu DB bạn đang lưu là "ADMIN" (hoa hết) thì sửa lại list này thành hoa hết.
+        role_names = ["Admin", "Author", "Chair", "Reviewer"]
+        roles_db = {}
+
+        # Vòng lặp kiểm tra và tạo Role
+        for r_name in role_names:
+            role = db.query(Role).filter(Role.role_name == r_name).first()
+            if not role:
+                role = Role(role_name=r_name)
+                db.add(role)
+                print(f"-> Created new role: {r_name}")
+            else:
+                print(f"-> Role existing: {r_name}")
+            # Lưu tạm vào biến để lát gán cho User
+            roles_db[r_name] = role
         
-        if not role_author:
-            role_author = Role(role_name="AUTHOR")
-            db.add(role_author)
-            
-        db.commit() # Lưu Role để có ID trước khi gán cho User
+        db.commit() # Commit lần 1 để Role có ID chính thức
 
-        # 2. Tạo User Admin
-        if not db.query(User).filter(User.email == "admin@uth.edu.vn").first():
-            admin_user = User(
-                email="admin@uth.edu.vn",
-                password_hash=get_password_hash("admin123"), # Sửa tên cột thành password_hash
-                full_name="System Administrator",
-                is_active=True
-            )
-            # Gán quyền thông qua relationship
-            admin_user.roles.append(role_admin) 
-            db.add(admin_user)
-            print("Creating user: admin@uth.edu.vn")
+        # 2. TẠO CÁC USER MẪU (Đủ 4 quyền)
+        users_to_create = [
+            {
+                "email": "admin@uth.edu.vn",
+                "name": "System Administrator",
+                "role_obj": roles_db["Admin"]
+            },
+            {
+                "email": "author@uth.edu.vn",
+                "name": "Nguyen Van Tac Gia",
+                "role_obj": roles_db["Author"]
+            },
+            {
+                "email": "chair@uth.edu.vn",
+                "name": "Tran Van Truong Ban",
+                "role_obj": roles_db["Chair"]
+            },
+            {
+                "email": "reviewer@uth.edu.vn",
+                "name": "Le Thi Phan Bien",
+                "role_obj": roles_db["Reviewer"]
+            }
+        ]
 
-        # 3. Tạo User Author
-        if not db.query(User).filter(User.email == "author@uth.edu.vn").first():
-            author_user = User(
-                email="author@uth.edu.vn",
-                password_hash=get_password_hash("author123"), # Sửa tên cột thành password_hash
-                full_name="Demo Author",
-                is_active=True
-            )
-            # Gán quyền thông qua relationship
-            author_user.roles.append(role_author)
-            db.add(author_user)
-            print("Creating user: author@uth.edu.vn")
+        for u_data in users_to_create:
+            user = db.query(User).filter(User.email == u_data["email"]).first()
+            if not user:
+                new_user = User(
+                    email=u_data["email"],
+                    password_hash=get_password_hash("123456"), # Mật khẩu chung là 123456 cho dễ nhớ
+                    full_name=u_data["name"],
+                    is_active=True
+                )
+                # Gán quyền
+                new_user.roles.append(u_data["role_obj"])
+                db.add(new_user)
+                print(f"-> Created user: {u_data['email']}")
+            else:
+                print(f"-> User existing: {u_data['email']}")
 
         db.commit()
         print("--- Seed data inserted successfully ---")
