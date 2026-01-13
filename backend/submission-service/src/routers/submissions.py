@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List
 import json
 import httpx
+import os
+import shutil
 
 from .. import database, crud, schemas, exceptions
 from ..config import settings
@@ -53,9 +55,7 @@ def submit_paper(
         # paper_data = schemas.PaperCreate.model_validate_json(metadata)
 
         try:
-            # Chuyển chuỗi JSON thành Dictionary
             data_dict = json.loads(metadata)
-            # Validate dữ liệu bằng Pydantic
             paper_data = schemas.PaperCreate(**data_dict)
         except Exception as json_error:
             raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(json_error)}")
@@ -178,3 +178,123 @@ def get_submission_detail(
         raise HTTPException(status_code=403, detail=str(e))
 
 
+# --- API THÊM TÁC GIẢ ---
+@router.post("/{paper_id}/authors", response_model=schemas.AuthorResponse)
+def add_co_author(
+    paper_id: int,
+    author_data: schemas.AuthorAdd,
+    db: Session = Depends(database.get_db),
+    # current_user = Depends(get_current_user)
+):
+    # Mock user ID để test (Sau này thay bằng current_user.id)
+    submitter_id = 1
+    
+    try:
+        new_author = crud.add_author(db, paper_id, submitter_id, author_data)
+        return new_author
+        
+    except exceptions.PaperNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except exceptions.NotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=e.message)
+    except exceptions.BusinessRuleError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{paper_id}/authors/{author_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_co_author(
+    paper_id: int,
+    author_id: int,
+    db: Session = Depends(database.get_db),
+):
+    submitter_id = 1
+    
+    try:
+        crud.remove_author(db, paper_id, author_id, submitter_id)
+        return
+        
+    except exceptions.AuthorNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except exceptions.NotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=e.message)
+    except exceptions.BusinessRuleError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    
+
+@router.post("/{paper_id}/withdraw", response_model=schemas.PaperResponse)
+def withdraw_submission(
+    paper_id: int,
+    db: Session = Depends(database.get_db)
+):
+
+    submitter_id = 1  
+    
+    try:
+        paper = crud.withdraw_paper(db, paper_id, submitter_id)
+        return paper
+
+    except exceptions.PaperNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except exceptions.NotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=e.message)
+    except exceptions.BusinessRuleError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    
+
+
+@router.put("/{paper_id}", response_model=schemas.PaperResponse)
+def update_paper_details(
+    paper_id: int,
+    update_data: schemas.PaperUpdate,
+    db: Session = Depends(database.get_db)
+):
+    submitter_id = 1 
+    
+    try:
+        updated_paper = crud.update_paper_metadata(db, paper_id, submitter_id, update_data)
+        return updated_paper
+
+    except exceptions.PaperNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except exceptions.NotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=e.message)
+    except exceptions.BusinessRuleError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    
+
+@router.post("/{paper_id}/file", response_model=schemas.PaperVersionResponse)
+def update_paper_file(
+    paper_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(database.get_db)
+):
+    submitter_id = 1 
+    
+    try:
+        next_ver = crud.get_next_version_number(db, paper_id)
+
+        base_dir = f"uploads/papers/{paper_id}/v{next_ver}"
+        os.makedirs(base_dir, exist_ok=True)
+
+        file_path = f"{base_dir}/{file.filename}"
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        new_version = crud.upload_new_version(
+            db=db, 
+            paper_id=paper_id, 
+            submitter_id=submitter_id, 
+            file_path=file_path, 
+            version_number=next_ver,
+            is_blind_mode=True 
+        )
+        return new_version
+
+    except exceptions.PaperNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except exceptions.NotAuthorizedError as e:
+        raise HTTPException(status_code=403, detail=e.message)
+    except exceptions.BusinessRuleError as e:
+        raise HTTPException(status_code=400, detail=e.message)

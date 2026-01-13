@@ -16,8 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY .env .
 
-# 6. Tạo thư mục uploads (Quan trọng)
-# Để tránh lỗi "Folder not found" khi lưu file
+
 RUN mkdir -p uploads
 
 # 7. Mở port 8000

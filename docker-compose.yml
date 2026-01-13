@@ -20,11 +20,14 @@ services:
       - "8000:8000"
     depends_on:
       - submission-db
+      - conference-service
     env_file:
       - ./backend/submission-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@submission-db:3306/submission_db
       NOTIFICATION_SERVICE_URL: http://notification-service:8000/notifications/send
+      CONFERENCE_SERVICE_URL: http://conference-service:8000/conferences
+      
     volumes:
       - ./backend/submission-service/uploads:/app/uploads
 
@@ -53,6 +56,36 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
 
+  conference-db:
+    image: mysql:8.0
+    container_name: conference_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: conference_db
+    ports:
+      - "3309:3306"
+    volumes:
+      - conference_db_data:/var/lib/mysql
+
+  conference-service:
+    build: 
+      context: ./backend/conference-service 
+      dockerfile: Dockerfile
+    container_name: conference_service
+    restart: on-failure
+    ports:
+      - "8002:8000" 
+    depends_on:
+      - conference-db
+    env_file:
+      - ./backend/conference-service/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://root:root@conference-db:3306/conference_db
+
 volumes:
   submission_db_data:
   notification_db_data:
+  conference_db_data:
+
+
