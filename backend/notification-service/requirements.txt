@@ -1,8 +1,11 @@
 fastapi
 uvicorn[standard]
+
 sqlalchemy
 pymysql
+
 pydantic
 pydantic-settings
-cryptography
-python-multipart
+email-validator 
+
+fastapi-mail

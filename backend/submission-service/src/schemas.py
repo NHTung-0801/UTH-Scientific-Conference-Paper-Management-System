@@ -20,7 +20,7 @@ class PaperAuthorCreate(BaseModel):
     user_id: Optional[int] = None
 
 
-class PaperAuthorResponse(BaseModel):
+class PaperAuthorResponse(PaperAuthorCreate):
     id: int
     full_name: str
     email: EmailStr
@@ -37,7 +37,7 @@ class PaperTopicCreate(BaseModel):
     topic_id: int
 
 
-class PaperTopicResponse(BaseModel):
+class PaperTopicResponse(PaperTopicCreate):
     id: int
     topic_id: int
 
@@ -48,6 +48,7 @@ class PaperTopicResponse(BaseModel):
 # Phiên bản của bài báo
 class PaperVersionResponse(BaseModel):
     id: int
+    paper_id: int
     version_number: int
     file_url: str
     created_at: datetime
@@ -61,6 +62,7 @@ class PaperVersionResponse(BaseModel):
 class PaperBase(BaseModel):
     title: str
     abstract: str
+    keywords: Optional[str] = None
     conference_id: int
     track_id: int
     is_blind_mode: bool = True
@@ -87,3 +89,34 @@ class PaperResponse(PaperBase):
 # Thông điệp phản hồi chung
 class MessageResponse(BaseModel):
     message: str
+
+# Thêm đồng giả
+class AuthorAdd(BaseModel):
+    full_name: str
+    email: EmailStr
+    organization: Optional[str] = None
+    is_corresponding: bool = False
+    user_id: Optional[int] = None
+
+class AuthorResponse(AuthorAdd):
+    id: int
+    paper_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class PaperTopicInput(BaseModel):
+    topic_id: int
+
+class PaperUpdate(BaseModel):
+    title: Optional[str] = None
+    abstract: Optional[str] = None
+    keywords: Optional[str] = None
+
+    topics: Optional[List[PaperTopicInput]] = None
+
+class ConferenceExternalInfo(BaseModel):
+    id: int
+    name: str
+    submission_deadline: Optional[datetime] = None
