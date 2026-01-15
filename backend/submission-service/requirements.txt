@@ -13,3 +13,4 @@ python-dotenv
 httpx
 requests
 cryptography
+pypdf

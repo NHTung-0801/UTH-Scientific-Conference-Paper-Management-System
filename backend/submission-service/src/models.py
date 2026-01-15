@@ -30,10 +30,11 @@ class Paper(Base):
     is_blind_mode = Column(Boolean, default=True) # Chế độ ẩn danh
     status = Column(Enum(PaperStatus), default=PaperStatus.SUBMITTED)
 
+    decision_note = Column(Text, nullable=True)
+
     submitted_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # --- Quan hệ (Relationships) ---
     # 1 paper có nhiều versions (phiên bản file)
     versions = relationship("PaperVersion", back_populates="paper", cascade="all, delete-orphan")
     

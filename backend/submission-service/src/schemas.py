@@ -52,6 +52,7 @@ class PaperVersionResponse(BaseModel):
     version_number: int
     file_url: str
     created_at: datetime
+    
     is_camera_ready: bool
     is_anonymous: bool
 
@@ -75,6 +76,8 @@ class PaperResponse(PaperBase):
     id: int
     submitter_id: int
     status: PaperStatus
+
+    decision_note: Optional[str] = None     
     
     submitted_at: datetime
     created_at: datetime
@@ -120,3 +123,8 @@ class ConferenceExternalInfo(BaseModel):
     id: int
     name: str
     submission_deadline: Optional[datetime] = None
+
+
+class PaperDecision(BaseModel):
+    status: PaperStatus
+    note: Optional[str] = None

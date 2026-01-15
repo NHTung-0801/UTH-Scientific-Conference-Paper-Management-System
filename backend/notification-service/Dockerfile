@@ -10,7 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. Copy toàn bộ mã nguồn vào container
 COPY src/ ./src/
-# Copy file .env (nếu muốn cứng code, nhưng tốt nhất là dùng docker-compose để mount)
 COPY .env .
 
 # 5. Mở port 8000

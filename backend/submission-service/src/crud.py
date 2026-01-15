@@ -1,8 +1,10 @@
 from sqlalchemy.orm import Session, selectinload
+import os
 from sqlalchemy import desc
 from datetime import datetime
 from . import models, schemas, exceptions
 import requests
+from pypdf import PdfReader
 from .config import settings
 
 
@@ -342,7 +344,9 @@ def validate_submission_window(conference_id: int):
         
         if resp.status_code == 404:
             raise exceptions.BusinessRuleError(f"Conference {conference_id} not found.")
+        
         if resp.status_code != 200:
+            print(f"Error calling Conference Service: {resp.text}")
             raise Exception("Cannot connect to Conference Service")
             
         conf_info = schemas.ConferenceExternalInfo(**resp.json())
@@ -354,6 +358,107 @@ def validate_submission_window(conference_id: int):
                 raise exceptions.DeadlineExceededError(
                     f"Submission deadline passed. The deadline was {deadline}."
                 )
-
+        return conf_info
+    
     except requests.RequestException:
         raise Exception("Failed to validate conference deadline.")
+    
+
+
+def update_paper_decision(
+    db: Session, 
+    paper_id: int, 
+    decision_data: schemas.PaperDecision
+) -> models.Paper:
+    
+    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
+    
+    if not paper:
+        raise exceptions.PaperNotFoundError(f"Paper {paper_id} not found")
+
+    if paper.status == models.PaperStatus.WITHDRAWN:
+        raise exceptions.BusinessRuleError("Cannot change status of a withdrawn paper.")
+    
+    paper.status = decision_data.status
+    
+    if decision_data.note is not None:
+        paper.decision_note = decision_data.note
+    
+    db.commit()
+    db.refresh(paper)
+    return paper
+
+def submit_camera_ready(
+    db: Session, 
+    paper_id: int, 
+    submitter_id: int, 
+    file_path: str
+) -> models.PaperVersion:
+    
+    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
+    if not paper:
+        raise exceptions.PaperNotFoundError(f"Paper {paper_id} not found")
+    
+    if paper.submitter_id != submitter_id:
+        raise exceptions.BusinessRuleError("You are not the owner of this paper.")
+
+    if paper.status != models.PaperStatus.ACCEPTED:
+        raise exceptions.BusinessRuleError(
+            f"Cannot submit Camera-Ready version. Paper status is '{paper.status}', but must be 'ACCEPTED'."
+        )
+
+    try:
+        reader = PdfReader(file_path)
+        num_pages = len(reader.pages)
+        
+
+        MAX_PAGES = 15
+        if num_pages > MAX_PAGES:
+            os.remove(file_path)
+            raise exceptions.BusinessRuleError(f"File exceeds page limit. Max is {MAX_PAGES}, got {num_pages}.")
+            
+    except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise exceptions.BusinessRuleError(f"Invalid PDF file. Details: {str(e)}")
+
+    next_ver = get_next_version_number(db, paper_id)
+
+    new_version = models.PaperVersion(
+        paper_id=paper_id,
+        version_number=next_ver,
+        file_url=file_path,
+        is_camera_ready=True,  
+        is_anonymous=False 
+    )
+    
+    db.add(new_version)
+    db.commit()
+    db.refresh(new_version)
+    
+    return new_version
+
+def check_spelling_with_ai(text: str):
+    payload = {
+        "text": text,
+        "type": "ABSTRACT"
+    }
+    try:
+        response = requests.post(f"{settings.INTELLIGENT_URL}/author/refine", json=payload, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"AI Service unavailable: {e}")
+        return None
+    
+def send_notification_email(to_email: str, subject: str, content: str):
+    payload = {
+        "email": to_email,
+        "subject": subject,
+        "content": content
+    }
+    
+    try:
+        requests.post(settings.NOTIFICATION_URL, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Failed to send email notification: {e}")
