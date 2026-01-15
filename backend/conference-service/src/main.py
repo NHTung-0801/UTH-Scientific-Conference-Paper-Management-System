@@ -16,4 +16,4 @@ def on_startup():
 # include routers
 app.include_router(conference_router, prefix="/conferences", tags=["Conferences"])
 app.include_router(track_router, prefix="/tracks", tags=["Tracks"])
-app.include_router(topic_router)
+app.include_router(topic_router, prefix="/topics", tags=["Topics"])
