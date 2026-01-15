@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from . import schemas, ai_engine, models
 import time
+from typing import List
 import json
 
 router = APIRouter()

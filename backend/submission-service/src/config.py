@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-
+import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+pymysql://root:root@localhost:3306/submission_db"
@@ -11,11 +11,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     MAX_FILE_SIZE_MB: int = 10
 
-    CONFERENCE_SERVICE_URL: str = "http://localhost:8001" 
-    CONFERENCE_SERVICE_URL: str = os.getenv("CONFERENCE_SERVICE_URL", "http://localhost:8001/conferences")
-
-    INTELLIGENT_URL = os.getenv("INTELLIGENT_SERVICE_URL", "http://localhost:8004/intelligent")
-
+    CONFERENCE_SERVICE_URL: str = os.getenv("CONFERENCE_SERVICE_URL", "http://conference_service:8000/conferences")
+    INTELLIGENT_URL: str = os.getenv("INTELLIGENT_SERVICE_URL", "http://intelligent_service:8004/intelligent")
     class Config:
         env_file = ".env"
 
