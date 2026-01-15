@@ -1,46 +1,39 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import FastAPI
+from src.database import engine, SessionLocal
+from src import models
+from src.routers import auth  # <--- Import router auth chúng ta vừa viết
 
-from src.database import SessionLocal
-from src.models import User
-from src.schemas import LoginRequest, TokenResponse
-from src.auth import verify_password, create_access_token, create_refresh_token
+# 1. Tạo bảng trong database nếu chưa tồn tại
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Identity Service")
 
+# 2. Đăng ký Router (Quan trọng)
+# Dòng này sẽ kích hoạt toàn bộ API: /api/auth/login, /register, /logout từ file auth.py
+app.include_router(auth.router)
 
-def get_db():
+# 3. Hàm khởi tạo dữ liệu mẫu (Role) - Chạy 1 lần khi start app
+def init_db():
     db = SessionLocal()
     try:
-        yield db
+        # Kiểm tra nếu chưa có Role nào thì tạo mới
+        if not db.query(models.Role).first():
+            roles = [
+                models.Role(role_name="ADMIN"),
+                models.Role(role_name="USER"),
+                models.Role(role_name="AUTHOR")
+            ]
+            db.add_all(roles)
+            db.commit()
+            print("--- Đã khởi tạo dữ liệu mẫu: ADMIN, USER, AUTHOR ---")
+    except Exception as e:
+        print(f"Lỗi khởi tạo DB: {e}")
     finally:
         db.close()
+
+# Gọi hàm khởi tạo
+init_db()
 
 @app.get("/")
 def root():
     return {"message": "identity-service is running"}
-
-@app.post("/api/auth/login", response_model=TokenResponse)
-def login(data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == data.email).first()
-    if not user or not verify_password(data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    access_token = create_access_token({
-        "sub": user.email,
-        "role": user.role
-    })
-    refresh_token = create_refresh_token({
-        "sub": user.email
-    })
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
-
-
-@app.post("/api/auth/logout")
-def logout():
-    return {"message": "Logout successful"}
