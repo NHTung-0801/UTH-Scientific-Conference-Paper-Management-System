@@ -298,3 +298,66 @@ def update_paper_file(
         raise HTTPException(status_code=403, detail=e.message)
     except exceptions.BusinessRuleError as e:
         raise HTTPException(status_code=400, detail=e.message)
+    
+
+
+@router.put("/{paper_id}/decision", response_model=schemas.PaperResponse)
+def make_decision_on_paper(
+    paper_id: int,
+    decision: schemas.PaperDecision,
+    db: Session = Depends(database.get_db)
+):
+
+    try:
+        updated_paper = crud.update_paper_decision(
+            db=db, 
+            paper_id=paper_id, 
+            decision_data=decision
+        )
+        return updated_paper
+
+    except exceptions.PaperNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except exceptions.BusinessRuleError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+@router.post("/{paper_id}/camera-ready", response_model=schemas.PaperVersionResponse)
+def upload_camera_ready(
+    paper_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(database.get_db)
+):
+    submitter_id = 42 
+
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    upload_dir = f"uploads/papers/{paper_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = f"{upload_dir}/camera_ready_{file.filename}"
+
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
+
+    try:
+        new_version = crud.submit_camera_ready(
+            db=db,
+            paper_id=paper_id,
+            submitter_id=submitter_id,
+            file_path=file_path
+        )
+        return new_version
+
+    except exceptions.PaperNotFoundError as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=404, detail=str(e))
+        
+    except exceptions.BusinessRuleError as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=400, detail=str(e))

@@ -42,6 +42,7 @@ class Paper(Base):
     
     # 1 paper thuộc nhiều topics (chủ đề)
     topics = relationship("PaperTopic", back_populates="paper", cascade="all, delete-orphan")
+    versions = relationship("PaperVersion", back_populates="paper", cascade="all, delete-orphan")
 
 
 # 3. Bảng Tác giả (Paper Authors)
