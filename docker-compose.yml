@@ -84,6 +84,35 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://root:root@conference-db:3306/conference_db
 
+
+  intelligent-db:
+      image: mysql:8.0
+      container_name: intelligent_db
+      restart: always
+      environment:
+        MYSQL_ROOT_PASSWORD: root
+        MYSQL_DATABASE: intelligent_db
+      ports:
+        - "3310:3306"
+      volumes:
+        - intelligent_db_data:/var/lib/mysql
+
+  intelligent-service:
+      build: ./backend/intelligent-service
+      container_name: intelligent_service
+      restart: on-failure
+      ports:
+        - "8004:8004"
+      depends_on:
+        - intelligent-db
+      env_file:
+        - ./backend/intelligent-service/.env
+      environment:
+        DATABASE_URL: mysql+pymysql://root:root@intelligent-db:3306/intelligent_db
+        GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      volumes:
+        - ./backend/intelligent-service/src:/app/src
+        
   review-db:
     image: mysql:8.0
     container_name: review_db
@@ -112,4 +141,5 @@ volumes:
   submission_db_data:
   notification_db_data:
   conference_db_data:
+  intelligent_db_data:
   review_db_data:

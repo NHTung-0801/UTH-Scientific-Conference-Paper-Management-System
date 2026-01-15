@@ -7,7 +7,7 @@ class NotAuthorizedError(Exception):
     pass
 
 class StateTransitionError(Exception):
-    """Lỗi khi cố chuyển trạng thái bài báo không hợp lệ (ví dụ: đã Duyệt rồi lại nộp lại)"""
+    """Lỗi khi cố chuyển trạng thái bài báo không hợp lệ"""
     pass
 
 # File: src/exceptions.py
@@ -38,3 +38,15 @@ class BusinessRuleError(Exception):
 class DeadlineExceededError(BusinessRuleError):
     """Lỗi ném ra khi quá hạn nộp bài"""
     pass
+
+class BusinessRuleError(Exception):
+    """Lỗi vi phạm quy tắc nghiệp vụ chung"""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+class PaperNotFoundError(Exception):
+    """Lỗi không tìm thấy bài báo"""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)

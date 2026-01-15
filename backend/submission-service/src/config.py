@@ -13,7 +13,9 @@ class Settings(BaseSettings):
 
     CONFERENCE_SERVICE_URL: str = "http://localhost:8001" 
     CONFERENCE_SERVICE_URL: str = os.getenv("CONFERENCE_SERVICE_URL", "http://localhost:8001/conferences")
-    
+
+    INTELLIGENT_URL = os.getenv("INTELLIGENT_SERVICE_URL", "http://localhost:8004/intelligent")
+
     class Config:
         env_file = ".env"
 
