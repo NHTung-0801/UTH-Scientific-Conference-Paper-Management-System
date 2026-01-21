@@ -1,8 +1,7 @@
-// src/pages/Login.jsx
 import { useState } from 'react';
-import axiosClient from '../../api/axiosClient';
 import { useNavigate, Link } from 'react-router-dom';
-import { getUserRole } from '../../utils/auth';
+import axiosClient from '../../api/axiosClient'; // Đảm bảo đúng đường dẫn
+import { getUserRole, setToken } from '../../utils/auth'; // Import thêm setToken
 
 const Login = () => {
     const [email, setEmail] = useState('');
@@ -15,26 +14,30 @@ const Login = () => {
         setError(''); // Reset lỗi cũ
         
         try {
-            // --- KHẮC PHỤC LỖI 422 Ở ĐÂY ---
-            // FastAPI yêu cầu 'application/x-www-form-urlencoded', KHÔNG PHẢI 'multipart/form-data'
-            // Nên ta dùng URLSearchParams thay vì FormData
+            // --- KHẮC PHỤC LỖI 422 (FastAPI Requirement) ---
+            // FastAPI mong đợi dữ liệu dạng 'application/x-www-form-urlencoded'
+            // và trường định danh phải tên là 'username' (dù ta nhập email)
             const formData = new URLSearchParams();
-            formData.append('username', email); // Bắt buộc key là 'username'
+            formData.append('username', email); 
             formData.append('password', password);
 
             // Gọi API Login
             // Axios sẽ tự động set Header Content-Type chính xác khi dùng URLSearchParams
             const res = await axiosClient.post('/auth/token', formData);
             
-            // Lưu token vào LocalStorage
-            localStorage.setItem('access_token', res.data.access_token);
+            // --- XỬ LÝ KẾT QUẢ ---
+            // 1. Lưu token bằng hàm helper (Centralized logic)
+            // Lưu ý: res.data chứa access_token trả về từ backend
+            const token = res.data.access_token;
+            setToken(token);
 
-            // --- PHÂN LUỒNG ĐIỀU HƯỚNG ---
-            // Lấy role từ token vừa lưu
+            // 2. Lấy role để điều hướng
+            // Lúc này token đã nằm trong localStorage nên getUserRole sẽ hoạt động
             const role = getUserRole(); 
             
             console.log("✅ Đăng nhập thành công! Role:", role);
 
+            // 3. Phân luồng điều hướng
             switch (role) {
                 case 'Admin':
                     navigate('/admin');
@@ -49,17 +52,20 @@ const Login = () => {
                     navigate('/author');
                     break;
                 default:
-                    // Mặc định về trang Author nếu không xác định được
+                    // Nếu có token nhưng không xác định được role, đưa về trang default
                     navigate('/author');
             }
 
         } catch (err) {
             console.error("Lỗi đăng nhập:", err);
-            // Hiển thị thông báo lỗi thân thiện hơn
+            
+            // Xử lý hiển thị lỗi
             if (err.response && err.response.status === 401) {
-                setError('Sai email hoặc mật khẩu!');
+                setError('Sai email hoặc mật khẩu! Vui lòng kiểm tra lại.');
+            } else if (err.response && err.response.status === 422) {
+                setError('Dữ liệu không hợp lệ (Lỗi 422). Vui lòng liên hệ Admin.');
             } else {
-                setError('Có lỗi xảy ra, vui lòng thử lại sau.');
+                setError('Không thể kết nối đến server. Vui lòng thử lại sau.');
             }
         }
     };
@@ -69,11 +75,11 @@ const Login = () => {
             <div className="card shadow p-4" style={{ width: '400px', borderRadius: '10px' }}>
                 <h2 className="text-center mb-4 text-primary">Đăng Nhập</h2>
                 
-                {error && <div className="alert alert-danger text-center">{error}</div>}
+                {error && <div className="alert alert-danger text-center" role="alert">{error}</div>}
                 
                 <form onSubmit={handleLogin}>
                     <div className="mb-3">
-<label className="form-label fw-bold">Email:</label>
+                        <label className="form-label fw-bold">Email:</label>
                         <input 
                             type="email" 
                             className="form-control" 

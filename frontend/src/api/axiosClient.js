@@ -1,35 +1,49 @@
+
 import axios from 'axios';
+// Import các hàm tiện ích auth (đảm bảo bạn đã tạo file này ở bước trước)
+import { getToken, removeToken } from '../utils/auth';
 
 const axiosClient = axios.create({
-    baseURL: 'http://127.0.0.1:8000/api',
+    // Ưu tiên lấy từ biến môi trường, nếu không có thì dùng localhost
+    baseURL: process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api',
     headers: {
-        
+        'Content-Type': 'application/json',
     },
 });
 
-axiosClient.interceptors.request.use((config) => {
-    const token = localStorage.getItem('access_token');
-    
-    console.log("🚀 Request to:", config.url); 
-    console.log("🔑 Token attached:", token ? "YES" : "NO");
+// --- Interceptor: Xử lý trước khi gửi Request ---
+axiosClient.interceptors.request.use(async (config) => {
+    // Lấy token từ localStorage thông qua hàm tiện ích
+    const token = getToken();
+
+    // Log để debug (có thể comment lại khi lên production)
+    console.log(`🚀 Request to: ${config.baseURL}${config.url}`);
     
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log("🔑 Token attached: YES");
+    } else {
+        console.log("🔑 Token attached: NO");
     }
+
     return config;
 }, (error) => {
     return Promise.reject(error);
 });
 
-
 axiosClient.interceptors.response.use((response) => {
     return response;
 }, (error) => {
-    if (error.response && error.response.status === 401) {
-        console.error("⛔ Lỗi 401: Token hết hạn hoặc không hợp lệ.");
+    const { response } = error;
 
+    if (response && response.status === 401) {
+        console.error("⛔ Lỗi 401: Token hết hạn hoặc không hợp lệ. Đang đăng xuất...");
+        
+        removeToken();
+        window.location.href = '/login';
     }
-    throw error;
+
+    return Promise.reject(error);
 });
 
 export default axiosClient;
