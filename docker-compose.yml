@@ -1,5 +1,9 @@
-services:
+version: '3.8'
 
+services:
+  # ==========================================
+  # 1. SUBMISSION SERVICE
+  # ==========================================
   submission-db:
     image: mysql:8.0
     container_name: submission_db
@@ -11,6 +15,8 @@ services:
       - "3307:3306"
     volumes:
       - submission_db_data:/var/lib/mysql
+    networks:
+      - confms-network
 
   submission-service:
     build: ./backend/submission-service
@@ -20,18 +26,24 @@ services:
       - "8000:8000"
     depends_on:
       - submission-db
-      - conference-service
+      - identity-service
     env_file:
       - ./backend/submission-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@submission-db:3306/submission_db
-      NOTIFICATION_SERVICE_URL: http://notification-service:8000/notifications/send
-      CONFERENCE_SERVICE_URL: http://conference-service:8000/conferences
-      INTELLIGENT_SERVICE_URL: http://intelligent-service:8004/intelligent
-      
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+      REVIEW_SERVICE_URL: http://review-service:8000
+      CONFERENCE_SERVICE_URL: http://conference-service:8000
+      INTELLIGENT_SERVICE_URL: http://intelligent-service:8000
+      IDENTITY_SERVICE_URL: http://identity-service:8000
     volumes:
       - ./backend/submission-service/uploads:/app/uploads
+    networks:
+      - confms-network
 
+  # ==========================================
+  # 2. NOTIFICATION SERVICE
+  # ==========================================
   notification-db:
     image: mysql:8.0
     container_name: notification_db
@@ -43,6 +55,8 @@ services:
       - "3308:3306"
     volumes:
       - notification_db_data:/var/lib/mysql
+    networks:
+      - confms-network
 
   notification-service:
     build: ./backend/notification-service
@@ -56,7 +70,12 @@ services:
       - ./backend/notification-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
+    networks:
+      - confms-network
 
+  # ==========================================
+  # 3. CONFERENCE SERVICE
+  # ==========================================
   conference-db:
     image: mysql:8.0
     container_name: conference_db
@@ -68,6 +87,8 @@ services:
       - "3309:3306"
     volumes:
       - conference_db_data:/var/lib/mysql
+    networks:
+      - confms-network
 
   conference-service:
     build: 
@@ -79,40 +100,57 @@ services:
       - "8002:8000" 
     depends_on:
       - conference-db
+      - identity-service
     env_file:
       - ./backend/conference-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@conference-db:3306/conference_db
+      SUBMISSION_SERVICE_URL: http://submission-service:8000
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+      REVIEW_SERVICE_URL: http://review-service:8000
+      INTELLIGENT_SERVICE_URL: http://intelligent-service:8000
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+    networks:
+      - confms-network
 
-
+  # ==========================================
+  # 4. INTELLIGENT SERVICE (AI)
+  # ==========================================
   intelligent-db:
-      image: mysql:8.0
-      container_name: intelligent_db
-      restart: always
-      environment:
-        MYSQL_ROOT_PASSWORD: root
-        MYSQL_DATABASE: intelligent_db
-      ports:
-        - "3310:3306"
-      volumes:
-        - intelligent_db_data:/var/lib/mysql
+    image: mysql:8.0
+    container_name: intelligent_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: intelligent_db
+    ports:
+      - "3310:3306"
+    volumes:
+      - intelligent_db_data:/var/lib/mysql
+    networks:
+      - confms-network
 
   intelligent-service:
-      build: ./backend/intelligent-service
-      container_name: intelligent_service
-      restart: on-failure
-      ports:
-        - "8004:8004"
-      depends_on:
-        - intelligent-db
-      env_file:
-        - ./backend/intelligent-service/.env
-      environment:
-        DATABASE_URL: mysql+pymysql://root:root@intelligent-db:3306/intelligent_db
-        GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      volumes:
-        - ./backend/intelligent-service/src:/app/src
+    build: ./backend/intelligent-service
+    container_name: intelligent_service
+    restart: on-failure
+    ports:
+      - "8004:8000"
+    depends_on:
+      - intelligent-db
+    env_file:
+      - ./backend/intelligent-service/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://root:root@intelligent-db:3306/intelligent_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+    volumes:
+      - ./backend/intelligent-service/src:/app/src
+    networks:
+      - confms-network
 
+  # ==========================================
+  # 5. REVIEW SERVICE
+  # ==========================================
   review-db:
     image: mysql:8.0
     container_name: review_db
@@ -124,6 +162,8 @@ services:
       - "3311:3306"
     volumes:
       - review_db_data:/var/lib/mysql
+    networks:
+      - confms-network
 
   review-service:
     build: ./backend/review-service
@@ -133,13 +173,77 @@ services:
       - "8003:8000"
     depends_on:
       - review-db
+      - submission-service 
+      - conference-service
+      - identity-service
     environment:
       DATABASE_URL: mysql+pymysql://root:root@review-db:3306/review_db
       SUBMISSION_SERVICE_URL: http://submission-service:8000
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+      CONFERENCE_SERVICE_URL: http://conference-service:8000
+      INTELLIGENT_SERVICE_URL: http://intelligent-service:8000
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+    networks:
+      - confms-network
 
+  # ==========================================
+  # 6. IDENTITY SERVICE
+  # ==========================================
+  identity-db: 
+    image: mysql:8.0
+    container_name: identity_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: identity_db 
+    ports:
+      - "3306:3306"
+    volumes:
+      - identity_db_data:/var/lib/mysql
+    networks:
+      - confms-network
+
+  identity-service: 
+    build: ./backend/identity-service 
+    container_name: identity_service
+    restart: on-failure
+    depends_on:
+      - identity-db
+    ports:
+      - "8005:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://root:root@identity-db:3306/identity_db
+      SECRET_KEY: "chuoi_bi_mat_cua_ban"
+      ALGORITHM: "HS256"
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+    networks:
+      - confms-network
+
+  frontend:
+    build: ./frontend
+    container_name: frontend_service
+    restart: always
+    ports:
+      - "3000:3000"  
+    volumes:
+      - ./frontend:/app  
+      - /app/node_modules         
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000 
+    networks:
+      - confms-network
+
+# ==========================================
+# VOLUMES & NETWORKS
+# ==========================================
 volumes:
   submission_db_data:
   notification_db_data:
   conference_db_data:
   intelligent_db_data:
   review_db_data:
+  identity_db_data:
+
+networks:
+  confms-network:
+    driver: bridge

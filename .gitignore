@@ -8,6 +8,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Node
+node_modules/
+dist/
+build/
+
 # --- CHẶN MÔI TRƯỜNG ẢO ---
 venv/
 env/
@@ -20,3 +25,7 @@ env/
 
 # --- CHẶN FILE UPLOAD (Quan trọng) ---
 uploads/
+
+# OS
+.DS_Store
+Thumbs.db

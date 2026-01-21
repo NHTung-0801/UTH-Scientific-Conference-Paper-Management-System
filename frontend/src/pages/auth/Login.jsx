@@ -1,0 +1,113 @@
+// src/pages/Login.jsx
+import { useState } from 'react';
+import axiosClient from '../../api/axiosClient';
+import { useNavigate, Link } from 'react-router-dom';
+import { getUserRole } from '../../utils/auth';
+
+const Login = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const navigate = useNavigate();
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setError(''); // Reset lỗi cũ
+        
+        try {
+            // --- KHẮC PHỤC LỖI 422 Ở ĐÂY ---
+            // FastAPI yêu cầu 'application/x-www-form-urlencoded', KHÔNG PHẢI 'multipart/form-data'
+            // Nên ta dùng URLSearchParams thay vì FormData
+            const formData = new URLSearchParams();
+            formData.append('username', email); // Bắt buộc key là 'username'
+            formData.append('password', password);
+
+            // Gọi API Login
+            // Axios sẽ tự động set Header Content-Type chính xác khi dùng URLSearchParams
+            const res = await axiosClient.post('/auth/token', formData);
+            
+            // Lưu token vào LocalStorage
+            localStorage.setItem('access_token', res.data.access_token);
+
+            // --- PHÂN LUỒNG ĐIỀU HƯỚNG ---
+            // Lấy role từ token vừa lưu
+            const role = getUserRole(); 
+            
+            console.log("✅ Đăng nhập thành công! Role:", role);
+
+            switch (role) {
+                case 'Admin':
+                    navigate('/admin');
+                    break;
+                case 'Chair':
+                    navigate('/chair');
+                    break;
+                case 'Reviewer':
+                    navigate('/reviewer');
+                    break;
+                case 'Author':
+                    navigate('/author');
+                    break;
+                default:
+                    // Mặc định về trang Author nếu không xác định được
+                    navigate('/author');
+            }
+
+        } catch (err) {
+            console.error("Lỗi đăng nhập:", err);
+            // Hiển thị thông báo lỗi thân thiện hơn
+            if (err.response && err.response.status === 401) {
+                setError('Sai email hoặc mật khẩu!');
+            } else {
+                setError('Có lỗi xảy ra, vui lòng thử lại sau.');
+            }
+        }
+    };
+
+    return (
+        <div className="container d-flex justify-content-center align-items-center vh-100">
+            <div className="card shadow p-4" style={{ width: '400px', borderRadius: '10px' }}>
+                <h2 className="text-center mb-4 text-primary">Đăng Nhập</h2>
+                
+                {error && <div className="alert alert-danger text-center">{error}</div>}
+                
+                <form onSubmit={handleLogin}>
+                    <div className="mb-3">
+<label className="form-label fw-bold">Email:</label>
+                        <input 
+                            type="email" 
+                            className="form-control" 
+                            value={email} 
+                            onChange={(e) => setEmail(e.target.value)} 
+                            required 
+                            placeholder="name@example.com"
+                        />
+                    </div>
+                    <div className="mb-3">
+                        <label className="form-label fw-bold">Mật khẩu:</label>
+                        <input 
+                            type="password" 
+                            className="form-control" 
+                            value={password} 
+                            onChange={(e) => setPassword(e.target.value)} 
+                            required 
+                            placeholder="******"
+                        />
+                    </div>
+                    
+                    <button type="submit" className="btn btn-primary w-100 py-2 mb-3">
+                        Đăng Nhập
+                    </button>
+                    
+                    <div className="text-center">
+                        <small>
+                            Chưa có tài khoản? <Link to="/register" className="text-decoration-none">Đăng ký tại đây</Link>
+                        </small>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+export default Login;
