@@ -7,7 +7,7 @@ const Register = () => {
         email: '',
         password: '',
         full_name: '',
-        organization: '' // Thêm trường này nếu Backend có
+        organization: '' 
     });
     const [error, setError] = useState('');
     const navigate = useNavigate();

@@ -1,25 +1,17 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+
+import { Navigate, Outlet } from 'react-router-dom';
+import { isAuthenticated, getUserRole } from '../utils/auth';
 
 const PrivateRoute = ({ allowedRoles }) => {
-  const { user, loading } = useAuth();
-  const location = useLocation();
+  const isAuth = isAuthenticated();
+  const userRole = getUserRole();
 
-  if (loading) return <div>Đang tải...</div>;
-
-  if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!isAuth) {
+    return <Navigate to="/login" replace />;
   }
 
-  const hasPermission = user.roles.some(role => allowedRoles.includes(role));
-
-  if (allowedRoles && !hasPermission) {
-    return (
-      <div style={{ textAlign: 'center', marginTop: '50px', color: 'red' }}>
-        <h1>403 - FORBIDDEN</h1>
-        <p>Tài khoản {user.sub} không có quyền truy cập trang này.</p>
-      </div>
-    );
+  if (allowedRoles && !allowedRoles.includes(userRole)) {
+    return <div className="alert alert-danger">Bạn không có quyền truy cập trang này!</div>;
   }
 
   return <Outlet />;

@@ -1,22 +1,25 @@
 import axiosClient from './axiosClient';
 
-const BASE_URL = process.env.REACT_APP_IDENTITY_URL;
-
 const authApi = {
+  // 1. Đăng ký tài khoản
   register: (data) => {
-    return axiosClient.post(`${BASE_URL}/api/auth/register`, data);
+    return axiosClient.post('/auth/register', data);
   },
 
+  // 2. Đăng nhập (Dùng URLSearchParams cho chuẩn OAuth2 của FastAPI)
   login: (email, password) => {
-    const formData = new FormData();
-    formData.append('username', email);
+    const formData = new URLSearchParams();
+    formData.append('username', email); 
     formData.append('password', password);
 
-    return axiosClient.post(`${BASE_URL}/api/auth/login`, formData);
+    return axiosClient.post('/auth/token', formData);
   },
 
   getMe: () => {
-    return axiosClient.get(`${BASE_URL}/users/me`);
+    return axiosClient.get('/users/me');
+  },
+  logout: () => {
+    return axiosClient.post('/auth/logout');
   }
 };
 

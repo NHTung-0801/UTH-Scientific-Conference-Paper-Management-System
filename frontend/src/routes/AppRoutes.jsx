@@ -1,48 +1,62 @@
-import { Routes, Route } from 'react-router-dom';
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+
+// Component bảo vệ
 import PrivateRoute from './PrivateRoute';
+// Hằng số Role
 import { ROLES } from '../utils/constants';
 
-// Layouts (Bạn cần tạo 2 file rỗng cho Layouts này trước)
+// Layouts
 import PublicLayout from '../layouts/PublicLayout'; 
 import DashboardLayout from '../layouts/DashboardLayout';
 
 // Pages
-import LoginPage from '../pages/auth/Login';
-import HomePage from '../pages/public/HomePage';
+import Login from '../pages/auth/Login'; // Lưu ý tên file Login.jsx
+// import HomePage from '../pages/public/HomePage'; // (Nếu chưa có file này thì comment lại để tránh lỗi)
+
+// Component Placeholder cho Home (Xóa đi khi bạn có file thật)
+const HomePage = () => <div className="text-center mt-5"><h1>Trang Chủ Hệ Thống</h1><a href="/login">Đến trang đăng nhập</a></div>;
 
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* 1. PUBLIC (Ai cũng vào được) */}
+      {/* 1. PUBLIC ROUTES (Ai cũng vào được) */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={<Login />} />
+        {/* Route đăng ký nếu có: <Route path="/register" element={<RegisterPage />} /> */}
       </Route>
 
-      {/* 2. PROTECTED (Phải đăng nhập) */}
+      {/* 2. PROTECTED ROUTES (Phải đăng nhập mới vào được) */}
       <Route element={<DashboardLayout />}>
         
-        {/* Author */}
+        {/* --- Khu vực AUTHOR --- */}
+        {/* Khớp với navigate('/author') bên Login.jsx */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
-          <Route path="/author/dashboard" element={<h1>Dashboard Tác Giả</h1>} />
+          <Route path="/author" element={<h1>👋 Chào mừng Tác giả (Author Dashboard)</h1>} />
+          {/* Các route con khác của author: /author/submit-paper ... */}
         </Route>
 
-        {/* Chair */}
+        {/* --- Khu vực CHAIR --- */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
-          <Route path="/chair/dashboard" element={<h1>Dashboard Trưởng Ban</h1>} />
+          <Route path="/chair" element={<h1>👋 Chào mừng Trưởng ban (Chair Dashboard)</h1>} />
         </Route>
 
-        {/* Admin */}
+        {/* --- Khu vực ADMIN --- */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
-          <Route path="/admin/dashboard" element={<h1>Dashboard Admin</h1>} />
+          <Route path="/admin" element={<h1>👋 Chào mừng Admin</h1>} />
         </Route>
 
-        {/* Reviewer */}
+        {/* --- Khu vực REVIEWER --- */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER]} />}>
-          <Route path="/reviewer/dashboard" element={<h1>Dashboard Reviewer</h1>} />
+          <Route path="/reviewer" element={<h1>👋 Chào mừng Người phản biện (Reviewer)</h1>} />
         </Route>
 
       </Route>
+
+      {/* 3. CATCH ALL (Trang 404) */}
+      <Route path="*" element={<div className="text-center mt-5"><h1>404 - Không tìm thấy trang</h1></div>} />
+
     </Routes>
   );
 };
