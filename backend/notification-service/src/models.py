@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Enum
 from datetime import datetime
 import enum
-from .database import Base
-
+from src.database import Base
+from sqlalchemy.sql import func
 
 
 class EmailStatus(str, enum.Enum):
@@ -39,3 +39,20 @@ class EmailLog(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class InvitationStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+
+class ReviewerInvitation(Base):
+    __tablename__ = "reviewer_invitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conference_id = Column(Integer)
+    conference_name = Column(String(255))
+    reviewer_name = Column(String(255))
+    reviewer_email = Column(String(255))
+    description = Column(Text)
+    status = Column(Enum(InvitationStatus), default=InvitationStatus.PENDING)
+    token = Column(String(255))

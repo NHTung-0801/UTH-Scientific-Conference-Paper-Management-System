@@ -6,3 +6,7 @@ pydantic
 pydantic-settings
 cryptography
 python-multipart
+python-dotenv
+requests
+httpx
+passlib[bcrypt]

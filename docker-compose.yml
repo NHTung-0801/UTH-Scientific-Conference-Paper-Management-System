@@ -56,6 +56,7 @@ services:
       - ./backend/notification-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
+      CONFERENCE_SERVICE_URL: http://conference-service:8000
 
   conference-db:
     image: mysql:8.0

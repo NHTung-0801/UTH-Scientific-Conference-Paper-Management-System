@@ -1,7 +1,7 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional
 from datetime import datetime
-from .models import EmailStatus
+from src.models import EmailStatus
 
 class NotificationRequest(BaseModel):
     receiver_id: int          
@@ -39,4 +39,18 @@ class EmailLogResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ReviewerInviteRequest(BaseModel):
+    conference_id: int
+    reviewer_email: EmailStr
+    reviewer_name: str
+    description: str
     
+class ReviewerInvitationResponse(BaseModel):
+    id: int
+    conference_id: int
+    conference_name: str
+    reviewer_name: str
+    reviewer_email: str
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)

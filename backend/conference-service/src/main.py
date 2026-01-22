@@ -5,6 +5,7 @@ from src.database import Base, engine
 from src.conference.router import router as conference_router
 from src.conference.tracks.router import router as track_router
 from src.conference.topics.router import router as topic_router
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Conference Service")
 
@@ -13,7 +14,12 @@ app = FastAPI(title="Conference Service")
 def on_startup():
     Base.metadata.create_all(bind=engine)
 
+@app.get("/")
+def root():
+    return {"message": "Conference service running"}
+
 # include routers
-app.include_router(conference_router, prefix="/conferences", tags=["Conferences"])
+app.include_router(conference_router, tags=["Conferences"])
 app.include_router(track_router, prefix="/tracks", tags=["Tracks"])
-app.include_router(topic_router, prefix="/topics", tags=["Topics"])
+app.include_router(topic_router)
+app.mount("/static", StaticFiles(directory="static"), name="static")
