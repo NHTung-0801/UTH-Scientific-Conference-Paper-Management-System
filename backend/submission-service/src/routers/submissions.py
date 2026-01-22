@@ -36,7 +36,6 @@ def call_notification_service_task(payload: dict):
 
 # API nộp bài
 @router.post("/", response_model=schemas.PaperResponse, status_code=status.HTTP_201_CREATED)
-
 def submit_paper(
     background_tasks: BackgroundTasks,
     metadata: str = Form(...),

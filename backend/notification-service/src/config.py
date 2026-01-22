@@ -5,8 +5,13 @@ class Settings(BaseSettings):
     # 1. CẤU HÌNH DATABASE (MySQL)
     # =========================================================
     # Lưu ý: Đổi tên DB thành notification_db
+<<<<<<< HEAD
     DATABASE_URL: str = "mysql+pymysql://root:@localhost:3306/notification_db"
     
+=======
+    DATABASE_URL: str = "mysql+pymysql://root:root@localhost:3308/notification_db"
+
+>>>>>>> 67f27b38b47d6c1e41c52fce929e63da8c85e1c4
     # =========================================================
     # 2. CẤU HÌNH EMAIL (QUAN TRỌNG NHẤT)
     # =========================================================
@@ -24,6 +29,8 @@ class Settings(BaseSettings):
     # =========================================================
     # Dùng để tạo link trong email (Ví dụ: "Bấm vào đây để xem bài")
     FRONTEND_URL: str = "http://localhost:3000"
+
+    PROJECT_NAME: str = "Notification Service"
     
     # Cấu hình bảo mật (nếu cần xác thực service gọi sang)
     SECRET_KEY: str = "SECRET_KEY_NOTIFICATION_SERVICE"
@@ -32,6 +39,7 @@ class Settings(BaseSettings):
     class Config:
         # Tự động đọc file .env (nếu có) để ghi đè các giá trị trên
         env_file = ".env"
+        extra="ignore"
 
 # Khởi tạo
 settings = Settings()
