@@ -1,14 +1,19 @@
+import os
 from datetime import datetime, timedelta
-from jose import jwt
+from typing import Any, Dict, List, Optional, Union
+
+from jose import jwt, JWTError
 from passlib.context import CryptContext
+import hashlib
 
 # ========================
-# CONFIG
+# CONFIG (from ENV)
 # ========================
-SECRET_KEY = "SECRET_KEY_CHANGE_ME"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "SECRET_KEY_CHANGE_ME"))
+ALGORITHM = os.getenv("JWT_ALGORITHM", os.getenv("ALGORITHM", "HS256"))
+
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -23,19 +28,83 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
 
 # ========================
-# TOKEN
+# TOKEN HELPERS
 # ========================
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def _normalize_roles(roles: Union[str, List[Any], None]) -> List[str]:
+    if roles is None:
+        return []
+    if isinstance(roles, str):
+        return [roles.upper()]
+    if isinstance(roles, list):
+        out = []
+        for r in roles:
+            if isinstance(r, str):
+                out.append(r.upper())
+            elif isinstance(r, dict):
+                # phòng trường hợp roles là list object
+                val = r.get("role_name") or r.get("name") or r.get("role")
+                if val:
+                    out.append(str(val).upper())
+        return out
+    return []
 
 
-def create_refresh_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def create_access_token(
+    *,
+    subject: str,
+    user_id: Optional[int] = None,
+    roles: Union[str, List[Any], None] = None,
+    extra_claims: Optional[Dict[str, Any]] = None,
+) -> str:
+    now = datetime.utcnow()
+    expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    payload: Dict[str, Any] = {
+        "sub": subject,
+        "user_id": user_id,
+        "roles": _normalize_roles(roles),
+        "iat": int(now.timestamp()),
+        "exp": expire,
+    }
+
+    if extra_claims:
+        payload.update(extra_claims)
+
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token(
+    *,
+    subject: str,
+    user_id: Optional[int] = None,
+    extra_claims: Optional[Dict[str, Any]] = None,
+) -> str:
+    now = datetime.utcnow()
+    expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+
+    payload: Dict[str, Any] = {
+        "sub": subject,
+        "user_id": user_id,
+        "iat": int(now.timestamp()),
+        "exp": expire,
+        "type": "refresh",
+    }
+
+    if extra_claims:
+        payload.update(extra_claims)
+
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_token(token: str) -> Dict[str, Any]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload["roles"] = _normalize_roles(payload.get("roles"))
+        return payload
+    except JWTError as e:
+        raise ValueError(f"Invalid token: {e}") from e

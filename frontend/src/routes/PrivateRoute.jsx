@@ -1,4 +1,3 @@
-
 import { Navigate, Outlet } from 'react-router-dom';
 import { isAuthenticated, getUserRole } from '../utils/auth';
 
@@ -10,9 +9,12 @@ const PrivateRoute = ({ allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(userRole)) {
-    return <div className="alert alert-danger">Bạn không có quyền truy cập trang này!</div>;
-  }
+  const normalizedUserRole = (userRole || '').toUpperCase();
+  const normalizedAllowed = (allowedRoles || []).map(r => (r || '').toUpperCase());
+
+  if (normalizedAllowed.length > 0 && !normalizedAllowed.includes(normalizedUserRole)) {
+  return <div className="alert alert-danger">Bạn không có quyền truy cập trang này!</div>;
+}
 
   return <Outlet />;
 };

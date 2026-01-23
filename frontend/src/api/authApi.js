@@ -1,26 +1,26 @@
 import axiosClient from './axiosClient';
 
+const IDENTITY_PREFIX = '/identity';
+
 const authApi = {
-  // 1. Đăng ký tài khoản
   register: (data) => {
-    return axiosClient.post('/auth/register', data);
+    return axiosClient.post(`${IDENTITY_PREFIX}/api/auth/register`, data);
   },
 
-  // 2. Đăng nhập (Dùng URLSearchParams cho chuẩn OAuth2 của FastAPI)
   login: (email, password) => {
-    const formData = new URLSearchParams();
-    formData.append('username', email); 
-    formData.append('password', password);
-
-    return axiosClient.post('/auth/token', formData);
+        return axiosClient.post(`${IDENTITY_PREFIX}/api/auth/login`, {
+        email: email, 
+        password: password
+    });
   },
 
   getMe: () => {
-    return axiosClient.get('/users/me');
+    return axiosClient.get(`${IDENTITY_PREFIX}/api/users/me`);
   },
+
   logout: () => {
-    return axiosClient.post('/auth/logout');
-  }
+    return axiosClient.post(`${IDENTITY_PREFIX}/api/auth/logout`);
+  },
 };
 
 export default authApi;
