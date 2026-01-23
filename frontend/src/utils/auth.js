@@ -87,5 +87,4 @@ export const isAuthenticated = () => {
 
 export const logout = () => {
     removeToken();
-    window.location.href = '/login';
 };
