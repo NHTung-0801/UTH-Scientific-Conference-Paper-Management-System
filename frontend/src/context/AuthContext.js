@@ -1,3 +1,5 @@
+// Ghi nhớ phiên đăng nhập
+
 import { createContext, useContext, useState, useEffect } from 'react';
 import { jwtDecode } from "jwt-decode"; 
 import authApi from '../api/authApi';
@@ -8,7 +10,6 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Hàm helper để decode token và set User State
   const handleToken = (token) => {
     if (token) {
       try {
