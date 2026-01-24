@@ -2,12 +2,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-// import './assets/styles/index.css'; // Bỏ comment dòng này nếu bạn đã tạo file CSS
 
-// Tìm thẻ div root trong public/index.html
+import 'bootstrap/dist/css/bootstrap.min.css'; 
+import 'bootstrap/dist/js/bootstrap.bundle.min';
+import 'bootstrap-icons/font/bootstrap-icons.css'; 
+
+import './assets/styles/css/App.css';
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
-// Render ứng dụng
 root.render(
   <React.StrictMode>
     <App />

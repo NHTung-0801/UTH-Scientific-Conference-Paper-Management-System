@@ -4,12 +4,15 @@ from . import models, schemas
 def create_notification_log(db: Session, msg_data: schemas.NotificationRequest):
  
     new_msg = models.Message(
-        sender_id=0, # 0 mặc định là Hệ thống gửi
+        sender_id=sender_id,
         receiver_id=msg_data.receiver_id,
+        receiver_email=getattr(msg_data, "receiver_email", None),
+        receiver_name=getattr(msg_data, "receiver_name", None),
         paper_id=msg_data.paper_id,
+        paper_title=getattr(msg_data, "paper_title", None),
         subject=msg_data.subject,
         body=msg_data.body,
-        is_read=False
+        is_read=False,
     )
     
     db.add(new_msg)
@@ -53,8 +56,13 @@ def get_user_messages(db: Session, user_id: int, limit: int = 20):
         .limit(limit)\
         .all()
 
-def mark_message_read(db: Session, message_id: int):
-    msg = db.query(models.Message).filter(models.Message.id == message_id).first()
+def mark_message_read(db: Session, message_id: int, receiver_id: int):
+    msg = (
+        db.query(models.Message)
+        .filter(models.Message.id == message_id)
+        .filter(models.Message.receiver_id == receiver_id)
+        .first()
+    )
     if msg:
         msg.is_read = True
         db.commit()

@@ -105,3 +105,94 @@ body {
 .spinner {
   display: inline-block;
 }
+  
+
+/* =========================================
+   🔴 RED THEME - GIAO DIỆN HỘI NGHỊ
+========================================= */
+
+:root {
+  /* Bảng màu đỏ tùy chỉnh */
+  --theme-red-primary: #d32f2f;    /* Đỏ đậm chuyên nghiệp (dùng cho nút, tiêu đề) */
+  --theme-red-hover: #b71c1c;      /* Đỏ tối hơn khi di chuột */
+  --theme-red-light: #fef2f2;      /* Đỏ nền rất nhạt (dùng cho background section) */
+  --theme-red-accent: #ffcdd2;     /* Đỏ nhấn nhẹ (viền, badge nhạt) */
+}
+
+/* --- Overrides Bootstrap Defaults --- */
+/* Biến màu primary (xanh dương mặc định) thành màu đỏ của chúng ta */
+
+/* 1. Nút bấm Primary */
+.btn-primary {
+  background-color: var(--theme-red-primary) !important;
+  border-color: var(--theme-red-primary) !important;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover, .btn-primary:focus, .btn-primary:active {
+  background-color: var(--theme-red-hover) !important;
+  border-color: var(--theme-red-hover) !important;
+  box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3) !important; /* Hiệu ứng đổ bóng đỏ */
+}
+
+/* 2. Nút bấm Outline Primary */
+.btn-outline-primary {
+  color: var(--theme-red-primary) !important;
+  border-color: var(--theme-red-primary) !important;
+  font-weight: 600;
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--theme-red-primary) !important;
+  color: white !important;
+}
+
+/* 3. Màu chữ Primary */
+.text-primary {
+  color: var(--theme-red-primary) !important;
+}
+
+/* 4. Link liên kết */
+a {
+  color: var(--theme-red-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--theme-red-hover);
+  text-decoration: underline;
+}
+
+/* --- Custom Layout Classes --- */
+/* Navbar chuyên nghiệp hơn */
+.public-navbar {
+  background: white;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  border-top: 4px solid var(--theme-red-primary); /* Điểm nhấn viền đỏ trên cùng */
+  padding: 15px 0;
+}
+
+.navbar-brand-text {
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: #333;
+  letter-spacing: -0.5px;
+}
+
+.navbar-brand-text span {
+  color: var(--theme-red-primary); /* Chữ UTH màu đỏ */
+}
+
+/* Footer */
+.public-footer {
+  background-color: #2c2c2c;
+  color: #eee;
+  padding: 40px 0;
+  margin-top: auto; /* Đẩy footer xuống cuối */
+}
+
+/* Utility: Nền đỏ nhạt */
+.bg-red-light {
+  background-color: var(--theme-red-light) !important;
+}
