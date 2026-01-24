@@ -5,7 +5,7 @@ from .router import router
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="UTH-ConfMS Intelligent Service",
+    title="UTH Conference Intelligent Service",
     description="AI Microservice using Google Gemini",
     version="1.0.0"
 )

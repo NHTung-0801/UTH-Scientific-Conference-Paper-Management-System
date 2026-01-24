@@ -6,7 +6,7 @@ from src.routers import notifications
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="UTH Notification Service",
+    title="UTH Conference Notification Service",
     description="Microservice chuyên xử lý thông báo và email",
     version="1.0.0"
 )

@@ -1,62 +1,78 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-
-// Component bảo vệ
-import PrivateRoute from './PrivateRoute';
-// Hằng số Role
-import { ROLES } from '../utils/constants';
+// src/routes/AppRoutes.jsx
+import { Routes, Route } from "react-router-dom";
+import PrivateRoute from "./PrivateRoute";
+import { ROLES } from "../utils/constants";
 
 // Layouts
-import PublicLayout from '../layouts/PublicLayout'; 
-import DashboardLayout from '../layouts/DashboardLayout';
+import PublicLayout from "../layouts/PublicLayout";
+import DashboardLayout from "../layouts/DashboardLayout";
 
-// Pages
-import Login from '../pages/auth/Login'; // Lưu ý tên file Login.jsx
-// import HomePage from '../pages/public/HomePage'; // (Nếu chưa có file này thì comment lại để tránh lỗi)
+// Public Pages
+import Login from "../pages/auth/Login";
+import Register from "../pages/auth/Register";
+import HomePage from "../pages/public/HomePage";
 
-// Component Placeholder cho Home (Xóa đi khi bạn có file thật)
-const HomePage = () => <div className="text-center mt-5"><h1>Trang Chủ Hệ Thống</h1><a href="/login">Đến trang đăng nhập</a></div>;
+// Dashboard Pages
+import AuthorDashboard from "../pages/author/AuthorDashboard";
+import ChairDashboard from "../pages/chair/ChairDashboard";
+import ReviewerDashboard from "../pages/reviewer/ReviewerDashboard";
+import AdminDashboard from "../pages/admin/AdminDashboard";
+import ConferenceDetail from '../pages/public/ConferenceDetail';
+
+// Reviewer - Review Service pages
+import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
+import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
 
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* 1. PUBLIC ROUTES (Ai cũng vào được) */}
+      {/* 1. PUBLIC ROUTES (Ai cũng xem được) */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<Login />} />
-        {/* Route đăng ký nếu có: <Route path="/register" element={<RegisterPage />} /> */}
+        <Route path="/register" element={<Register />} />
+        <Route path="/conference/:id" element={<ConferenceDetail />} />
       </Route>
 
-      {/* 2. PROTECTED ROUTES (Phải đăng nhập mới vào được) */}
+      {/* 2. PROTECTED ROUTES (Cần đăng nhập) */}
       <Route element={<DashboardLayout />}>
-        
         {/* --- Khu vực AUTHOR --- */}
-        {/* Khớp với navigate('/author') bên Login.jsx */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
-          <Route path="/author" element={<h1>👋 Chào mừng Tác giả (Author Dashboard)</h1>} />
-          {/* Các route con khác của author: /author/submit-paper ... */}
+          <Route path="/author" element={<AuthorDashboard />} />
+          {/* Ví dụ mở rộng sau này: <Route path="/author/submit" element={<SubmitPaper />} /> */}
         </Route>
 
         {/* --- Khu vực CHAIR --- */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
-          <Route path="/chair" element={<h1>👋 Chào mừng Trưởng ban (Chair Dashboard)</h1>} />
+          <Route path="/chair" element={<ChairDashboard />} />
         </Route>
 
         {/* --- Khu vực ADMIN --- */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
-          <Route path="/admin" element={<h1>👋 Chào mừng Admin</h1>} />
+          <Route path="/admin" element={<AdminDashboard />} />
         </Route>
 
         {/* --- Khu vực REVIEWER --- */}
-        <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER]} />}>
-          <Route path="/reviewer" element={<h1>👋 Chào mừng Người phản biện (Reviewer)</h1>} />
+        <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
+          <Route path="/reviewer" element={<ReviewerDashboard />} />
+          <Route path="/reviewer/review/:assignmentId" element={<ReviewWorkspace />} />
+          <Route path="/reviewer/discussion/:paperId" element={<ReviewDiscussion />} />
         </Route>
-
       </Route>
 
       {/* 3. CATCH ALL (Trang 404) */}
-      <Route path="*" element={<div className="text-center mt-5"><h1>404 - Không tìm thấy trang</h1></div>} />
-
+      <Route
+        path="*"
+        element={
+          <div className="text-center mt-5" style={{ padding: "50px" }}>
+            <h1>404 - Không tìm thấy trang</h1>
+            <p>Đường dẫn bạn truy cập không tồn tại.</p>
+            <a href="/" className="btn btn-primary">
+              Về trang chủ
+            </a>
+          </div>
+        }
+      />
     </Routes>
   );
 };

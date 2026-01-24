@@ -13,12 +13,11 @@ class LoginRequest(BaseModel):
     password: str
 
 # --- Phần Role (Quyền hạn) ---
-# Schema con để hiển thị thông tin Role
 class RoleBase(BaseModel):
     role_name: str
     
     class Config:
-        from_attributes = True # Để đọc được dữ liệu từ SQLAlchemy model
+        from_attributes = True 
 
 # --- Phần User (Người dùng) ---
 class UserBase(BaseModel):
@@ -27,16 +26,25 @@ class UserBase(BaseModel):
     organization: Optional[str] = None
     is_active: bool = True
 
-# Dùng khi Đăng ký (Register) - Cần có password
 class UserCreate(UserBase):
     password: str
-    # Mặc định tạo user mới sẽ có quyền USER, có thể gửi thêm ["ADMIN"] nếu muốn
-    roles: List[str] = ["USER"] 
+    roles: List[str] = ["AUTHOR"]
 
-# Dùng khi Trả về dữ liệu (Response) - Ẩn password, hiện ID và Roles
+
 class UserResponse(UserBase):
     id: int
-    roles: List[RoleBase] = [] # Trả về danh sách object Role
+    roles: List[RoleBase] = [] 
 
     class Config:
         from_attributes = True
+
+class UpdateRoleRequest(BaseModel):
+    role_name: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+    all_devices: bool = False

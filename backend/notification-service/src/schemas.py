@@ -5,8 +5,8 @@ from src.models import EmailStatus
 
 class NotificationRequest(BaseModel):
     receiver_id: int          
-    receiver_email: EmailStr  
-    receiver_name: str     
+    receiver_email: Optional[EmailStr] = None
+    receiver_name: Optional[str] = None 
     
     paper_id: Optional[int] = None 
     paper_title: Optional[str] = None

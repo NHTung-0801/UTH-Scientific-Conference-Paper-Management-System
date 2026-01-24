@@ -1,13 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
 
-# Import từ các module trong src
 from src.database import get_db
 from src import schemas, crud
-# Lưu ý: Các hàm bảo mật (hash/jwt) của bạn đang nằm ở src/auth.py hoặc src/security.py
-# Dựa trên code cũ bạn gửi, tôi giả định bạn để ở src.auth
-from src.auth import verify_password, create_access_token, create_refresh_token
+from src.auth import (
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    hash_token,
+    SECRET_KEY,
+    ALGORITHM,
+    REFRESH_TOKEN_EXPIRE_DAYS
+)
 
 router = APIRouter(
     prefix="/api/auth",
@@ -17,56 +23,118 @@ router = APIRouter(
 # --- 1. API ĐĂNG KÝ (Register) ---
 @router.post("/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # Kiểm tra email đã tồn tại chưa
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
-        raise HTTPException(
-            status_code=400, 
-            detail="Email already registered"
-        )
-    # Tạo user mới
+        raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_user(db=db, user=user)
+
 
 # --- 2. API ĐĂNG NHẬP (Login) ---
 @router.post("/login", response_model=schemas.TokenResponse)
 def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
-    # Tìm user trong DB
     user = crud.get_user_by_email(db, data.email)
-    
-    # Kiểm tra user và mật khẩu
-    # LƯU Ý: Model mới dùng cột password_hash
+
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Lấy danh sách tên quyền (List[str]) từ relationship roles
-    # Ví dụ: user.roles là [Role(name='ADMIN'), Role(name='USER')]
-    # -> role_names sẽ là ["ADMIN", "USER"]
-    role_names = [role.role_name for role in user.roles]
+    role_names = [role.role_name.upper() for role in user.roles]
 
-    # Tạo Access Token chứa danh sách quyền
     access_token = create_access_token(
-        data={
-            "sub": user.email, 
-            "roles": role_names,  # Truyền list quyền vào token
-            "user_id": user.id
-        }
+        subject=user.email,
+        user_id=user.id,
+        roles=role_names,
     )
-    
+
     refresh_token = create_refresh_token(
-        data={"sub": user.email}
+        subject=user.email,
+        user_id=user.id,
     )
+
+    refresh_hash = hash_token(refresh_token)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud.save_refresh_token(db, user_id=user.id, token_hash=refresh_hash, expires_at=expires_at)
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
     }
 
-# --- 3. API ĐĂNG XUẤT ---
+
+# --- 3. API REFRESH TOKEN (Rotate refresh token) ---
+@router.post("/refresh", response_model=schemas.TokenResponse)
+def refresh(body: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token type")
+
+    user_id = payload.get("user_id")
+    email = payload.get("sub")
+    if not user_id or not email:
+        raise HTTPException(status_code=401, detail="Invalid refresh token payload")
+
+    token_hash = hash_token(body.refresh_token)
+    rt = crud.get_valid_refresh_token(db, token_hash)
+    if not rt:
+        raise HTTPException(status_code=401, detail="Refresh token revoked or expired")
+
+    user = crud.get_user_by_email(db, email=email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    role_names = [r.role_name.upper() for r in user.roles]
+
+    new_access = create_access_token(
+        subject=user.email,
+        user_id=user.id,
+        roles=role_names,
+    )
+
+    crud.revoke_refresh_token(db, token_hash)
+
+    new_refresh = create_refresh_token(
+        subject=user.email,
+        user_id=user.id,
+    )
+    new_refresh_hash = hash_token(new_refresh)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud.save_refresh_token(db, user_id=user.id, token_hash=new_refresh_hash, expires_at=expires_at)
+
+    return {
+        "access_token": new_access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+    }
+
+
+# --- 4. API ĐĂNG XUẤT (Revoke refresh token) ---
 @router.post("/logout")
-def logout():
+def logout(body: schemas.LogoutRequest, db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token type")
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token payload")
+
+    if body.all_devices:
+        crud.revoke_all_refresh_tokens_of_user(db, user_id=user_id)
+        return {"message": "Logout all devices successful"}
+
+    token_hash = hash_token(body.refresh_token)
+    crud.revoke_refresh_token(db, token_hash)
+
     return {"message": "Logout successful"}
