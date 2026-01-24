@@ -11,17 +11,26 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const handleToken = (token) => {
-    if (token) {
-      try {
-        const decoded = jwtDecode(token);
-        setUser(decoded);
-        localStorage.setItem('access_token', token);
-      } catch (e) {
-        console.error("Token lỗi:", e);
-        logout();
-      }
+    if (!token) return;
+
+    try {
+      const decoded = jwtDecode(token);
+
+      const normalizedUser = {
+        ...decoded,
+        id: decoded.id ?? decoded.user_id ?? decoded.sub, // ✅ thống nhất id
+        full_name: decoded.full_name ?? decoded.name ?? decoded.email,
+      };
+
+      setUser(normalizedUser);
+      localStorage.setItem("access_token", token);
+    } catch (e) {
+      console.error("Token lỗi:", e);
+      logout();
     }
   };
+
+
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -32,15 +41,20 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    try {
-      const res = await authApi.login(email, password);
-      const { access_token } = res; 
-      handleToken(access_token);
-      return true;
-    } catch (error) {
-      throw error;
+    const res = await authApi.login(email, password);
+    const access_token = res?.data?.access_token;
+    handleToken(access_token);
+
+    if (!access_token) {
+      console.error("Login response:", res?.data ?? res);
+      throw new Error("Server không trả access_token");
     }
+
+    handleToken(access_token);
+    return true;
   };
+
+
 
   const logout = () => {
     localStorage.removeItem('access_token');
