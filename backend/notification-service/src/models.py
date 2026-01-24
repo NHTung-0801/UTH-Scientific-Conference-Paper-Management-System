@@ -16,9 +16,11 @@ class Message(Base):
     id = Column(Integer, primary_key=True, index=True)
     sender_id = Column(Integer, nullable=True)
     receiver_id = Column(Integer, nullable=False)
+    receiver_email = Column(String(255), nullable=True)
+    receiver_name = Column(String(255), nullable=True)
     
-
     paper_id = Column(Integer, nullable=True) 
+    paper_title = Column(String(255), nullable=True)
     
     subject = Column(String(255), nullable=False)
     body = Column(Text, nullable=False)

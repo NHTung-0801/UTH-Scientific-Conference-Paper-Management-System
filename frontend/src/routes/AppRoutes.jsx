@@ -17,6 +17,7 @@ import AuthorDashboard from "../pages/author/AuthorDashboard";
 import ChairDashboard from "../pages/chair/ChairDashboard";
 import ReviewerDashboard from "../pages/reviewer/ReviewerDashboard";
 import AdminDashboard from "../pages/admin/AdminDashboard";
+import ConferenceDetail from '../pages/public/ConferenceDetail';
 
 // Reviewer - Review Service pages
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
@@ -30,6 +31,7 @@ const AppRoutes = () => {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/conference/:id" element={<ConferenceDetail />} />
       </Route>
 
       {/* 2. PROTECTED ROUTES (Cần đăng nhập) */}
