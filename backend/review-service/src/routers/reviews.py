@@ -7,26 +7,21 @@ from src.security.deps import get_current_payload, require_roles
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
 
-
-@router.post(
-    "/",
-    response_model=schemas.ReviewOut,
-    dependencies=[Depends(require_roles(["REVIEWER", "ADMIN"]))],
-)
-def create_review(
-    data: schemas.ReviewCreate,
-    db: Session = Depends(get_db),
-    payload=Depends(get_current_payload),
-):
-    reviewer_id = payload.get("user_id")
-    roles = set(payload.get("roles") or [])
-
+@router.post("/", response_model=schemas.ReviewOut)
+def create_review(data: schemas.ReviewCreate, db: Session = Depends(get_db)):
     ass = crud.get_assignment(db, data.assignment_id)
     if not ass:
         raise HTTPException(400, "assignment_id not found")
 
-    if "ADMIN" not in roles and ass.reviewer_id != reviewer_id:
-        raise HTTPException(403, "Not your assignment")
+    ass_status = ass.status.value if hasattr(ass.status, "value") else str(ass.status)
+
+    # ✅ only Accepted can create review
+    if ass_status != "Accepted":
+        raise HTTPException(400, "Assignment must be Accepted before creating a review")
+
+    # ✅ COI block
+    if crud.has_open_coi(db, reviewer_id=ass.reviewer_id, paper_id=ass.paper_id):
+        raise HTTPException(400, "COI detected: cannot create review for this paper")
 
     return crud.create_review(db, data)
 

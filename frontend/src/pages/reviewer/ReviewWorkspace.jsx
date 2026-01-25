@@ -98,32 +98,46 @@ export default function ReviewWorkspace() {
 
   const saveDraft = async () => {
     if (!review?.id) return;
+
     setSaving(true);
     setErr("");
+
     try {
-      // update review core fields
-      const updated = await reviewApi.updateReview(review.id, {
+      // 1) Update review core fields
+      await reviewApi.updateReview(review.id, {
         final_score: calcFinalScore,
         confidence_score: confidence,
         content_author: contentAuthor,
         content_pc: contentPc,
         is_draft: true,
+        // recommendation: recommendation, // (nếu backend có field này thì bật lên)
       });
 
-      // add criterias if missing
+      // 2) Map criterias hiện có theo name để biết cái nào update, cái nào create
+      const existingMap = new Map(
+        (review?.criterias ?? []).map((c) => [c.criteria_name, c])
+      );
+
+      // 3) Upsert criterias
       for (const c of CRITERIAS) {
-        if (!existingCriteriaNames.has(c.key)) {
-          await reviewApi.addCriteria(review.id, {
-            criteria_name: c.key,
-            grade: scores[c.key],
-            weight: c.weight,
-            comment: null,
-          });
+        const existed = existingMap.get(c.key);
+        const payload = {
+          criteria_name: c.key,
+          grade: scores[c.key],
+          weight: c.weight,
+          comment: null,
+        };
+
+        if (existed?.id) {
+          // ✅ UPDATE
+          await reviewApi.updateCriteria(review.id, existed.id, payload);
+        } else {
+          // ✅ CREATE
+          await reviewApi.addCriteria(review.id, payload);
         }
       }
 
-      setReview(updated.data);
-      // refresh to get criterias latest
+      // 4) Reload review để UI nhận criterias mới nhất (id, grade)
       const fresh = await reviewApi.getReview(review.id);
       setReview(fresh.data);
     } catch (e) {
@@ -132,6 +146,7 @@ export default function ReviewWorkspace() {
       setSaving(false);
     }
   };
+
 
   const submit = async () => {
     if (!review?.id) return;
