@@ -105,6 +105,7 @@ const Sidebar = () => {
           { to: "/author", label: "🏠 Tổng quan" },
           { to: "/author/submissions", label: "📄 Bài báo của tôi" },
           { to: "/author/submissions/new", label: "⬆️ Nộp bài báo mới" },
+          
         ]
       : []),
 
