@@ -124,11 +124,27 @@ def update_coi(db: Session, coi_id: int, data: schemas.COIUpdate):
     db.commit(); db.refresh(obj)
     return obj
 
+def get_coi(db: Session, coi_id: int):
+    return (
+        db.query(models.ConflictOfInterest)
+        .filter(models.ConflictOfInterest.id == coi_id)
+        .first()
+    )
+
 # -------- Discussions --------
-def create_discussion(db: Session, data: schemas.DiscussionCreate) -> models.ReviewDiscussion:
-    obj = models.ReviewDiscussion(**data.model_dump())
-    db.add(obj); db.commit(); db.refresh(obj)
+def create_discussion(db: Session, data: schemas.DiscussionCreate, sender_id: int) -> models.ReviewDiscussion:
+    obj = models.ReviewDiscussion(
+        paper_id=data.paper_id,
+        sender_id=sender_id,
+        content=data.content,
+        parent_id=data.parent_id,
+    )
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
     return obj
+
+
 
 def list_discussions(db: Session, paper_id: int):
     return (

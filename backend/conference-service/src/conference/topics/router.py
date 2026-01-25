@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File, status
 from sqlalchemy.orm import Session
 from datetime import datetime
 from src.database import get_db
@@ -9,6 +9,7 @@ from src.conference.topics.schemas import (
 from src.conference.models import Conference
 from src.conference.tracks.models import Track
 from fastapi import UploadFile, File, Form
+from src.security.deps import require_roles
 import os
 import shutil
 
@@ -20,13 +21,14 @@ router = APIRouter(
 # ========================
 # CREATE TOPIC
 # ========================
-@router.post("/")
+@router.post("/", status_code=status.HTTP_201_CREATED)
 def create_topic(
     name: str = Form(...),
     description: str = Form(None),
     track_id: int = Form(...),
     picture: UploadFile = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(require_roles("ADMIN", "CHAIR")),
 ):
     # ========================
     # CHECK TRACK TỒN TẠI
@@ -177,19 +179,21 @@ def get_topics_by_track(track_id: int, db: Session = Depends(get_db)):
 # ========================
 # UPDATE TOPIC (TEXT + PICTURE)
 # ========================
-@router.put("/{topic_id}")
+@router.put("/{topic_id}", status_code=200)
 def update_topic(
     topic_id: int,
     name: str = Form(None),
     description: str = Form(None),
     picture: UploadFile = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(require_roles("ADMIN", "CHAIR")),
 ):
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
 
     track = db.query(Track).filter(Track.id == topic.track_id).first()
+    
 
     # ===== BEFORE =====
     before = {
@@ -240,8 +244,13 @@ def update_topic(
 # ========================
 # DELETE TOPIC
 # ========================
-@router.delete("/{topic_id}")
-def delete_topic(topic_id: int, db: Session = Depends(get_db)):
+@router.delete("/{topic_id}", status_code=200)
+def delete_topic(
+    topic_id: int, 
+    db: Session = Depends(get_db),
+    _=Depends(require_roles("ADMIN", "CHAIR")),
+    ):
+    
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")

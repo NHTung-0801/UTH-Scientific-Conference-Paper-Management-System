@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime, time 
 from src.database import get_db
@@ -12,6 +12,7 @@ from src.conference.models import Conference
 from fastapi import UploadFile, File, Form
 import os
 import shutil
+from src.security.deps import require_roles
 
 router = APIRouter(
     prefix="/tracks",
@@ -21,13 +22,14 @@ router = APIRouter(
 # ========================
 # CREATE TRACK
 # ========================
-@router.post("/")
+@router.post("/", status_code=status.HTTP_201_CREATED)
 def create_track(
     name: str = Form(...),
     description: str = Form(None),
     conference_id: int = Form(...),
     logo: UploadFile = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(require_roles("ADMIN", "CHAIR")),
 ):
     # =========================
     # CHECK CONFERENCE TỒN TẠI
@@ -164,7 +166,8 @@ def update_track(
     name: str = Form(None),
     description: str = Form(None),
     logo: UploadFile = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(require_roles("ADMIN", "CHAIR")),
 ):
     track = db.query(Track).filter(Track.id == track_id).first()
     if not track:
@@ -221,7 +224,7 @@ def update_track(
 # DELETE TRACK
 # ========================
 @router.delete("/{track_id}")
-def delete_track(track_id: int, db: Session = Depends(get_db)):
+def delete_track(track_id: int, db: Session = Depends(get_db), _=Depends(require_roles("ADMIN", "CHAIR"))):
     track = db.query(Track).filter(Track.id == track_id).first()
     if not track:
         raise HTTPException(

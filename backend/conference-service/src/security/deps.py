@@ -1,27 +1,27 @@
-from typing import Any, Dict, List, Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
 from .jwt import decode_access_token
 
-bearer = HTTPBearer(auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/identity/api/auth/login")
 
-def get_current_payload(
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
-) -> Dict[str, Any]:
-    if creds is None or not creds.credentials:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+def get_current_payload(token: str = Depends(oauth2_scheme)) -> dict:
     try:
-        return decode_access_token(creds.credentials)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        return decode_access_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-def require_roles(allowed_roles: List[str]):
+def require_roles(*allowed_roles: str):
     allowed = {r.upper() for r in allowed_roles}
 
-    def _guard(payload: Dict[str, Any] = Depends(get_current_payload)) -> Dict[str, Any]:
-        roles = set(payload.get("roles") or [])
-        if not roles.intersection(allowed):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+    def _guard(payload: dict = Depends(get_current_payload)) -> dict:
+        roles = payload.get("roles") or []
+        if isinstance(roles, str):
+            roles = [roles]
+        roles = {str(r).upper() for r in roles}
+
+        if allowed and roles.isdisjoint(allowed):
+            raise HTTPException(status_code=403, detail="Forbidden (role)")
+
         return payload
 
     return _guard
