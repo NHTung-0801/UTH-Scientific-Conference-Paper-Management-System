@@ -6,7 +6,11 @@ pydantic
 pydantic-settings
 cryptography
 python-multipart
+<<<<<<< HEAD
 python-dotenv
 requests
 httpx
 passlib[bcrypt]
+=======
+python-jose[cryptography]
+>>>>>>> cf0e6ac3f0419f02d43e96e61ebb8f07149004f1

@@ -33,9 +33,17 @@ def root():
     return {"message": "Conference service running"}
 
 # include routers
+<<<<<<< HEAD
 app.include_router(conference_router, tags=["Conferences"])
 app.include_router(track_router, prefix="/tracks", tags=["Tracks"])
 app.include_router(topic_router, prefix="/topics", tags=["Topics"])
+=======
+app.include_router(conference_router, prefix="/conferences")
+app.include_router(track_router, prefix="/tracks")
+app.include_router(topic_router, prefix="/topics")
+
+
+>>>>>>> cf0e6ac3f0419f02d43e96e61ebb8f07149004f1
 
 @app.get("/")
 def root():

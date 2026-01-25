@@ -1,3 +1,4 @@
+# src/crud.py
 from sqlalchemy.orm import Session, joinedload
 from src import models, schemas
 from src.auth import get_password_hash
@@ -9,17 +10,7 @@ def get_user_by_email(db: Session, email: str):
 def get_user_by_id(db: Session, user_id: int):
     return db.query(models.User).filter(models.User.id == user_id).first()
 
-from sqlalchemy.orm import Session
-from src import models, schemas
-from src.auth import get_password_hash
-from datetime import datetime
-
-def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).filter(models.User.email == email).first()
-
-def get_user_by_id(db: Session, user_id: int):
-    return db.query(models.User).filter(models.User.id == user_id).first()
-
+# --- Hàm tạo user cho Đăng ký công khai (Giữ nguyên) ---
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = get_password_hash(user.password)
 
@@ -31,6 +22,7 @@ def create_user(db: Session, user: schemas.UserCreate):
         is_active=user.is_active
     )
 
+    # Logic cũ: Xử lý danh sách roles (List[str])
     if user.roles and len(user.roles) > 0:
         for role_name in user.roles:
             role_key = str(role_name).upper()
@@ -51,7 +43,38 @@ def create_user(db: Session, user: schemas.UserCreate):
     db.refresh(db_user)
     return db_user
 
+# ✅ THÊM MỚI: Hàm tạo user dành riêng cho Admin (Xử lý role đơn lẻ)
+def create_user_by_admin(db: Session, user: schemas.UserCreateByAdmin):
+    hashed_password = get_password_hash(user.password)
 
+    db_user = models.User(
+        email=user.email,
+        password_hash=hashed_password,
+        full_name=user.full_name,
+        organization=user.organization,
+        is_active=user.is_active
+    )
+
+    # Logic mới: Xử lý role đơn (str)
+    target_role_name = (user.role or "AUTHOR").upper()
+    
+    role_obj = db.query(models.Role).filter(models.Role.role_name == target_role_name).first()
+    
+    if role_obj:
+        db_user.roles.append(role_obj)
+    else:
+        # Fallback về AUTHOR nếu role gửi lên bị sai
+        print(f"[WARN] Admin requested role '{target_role_name}' but not found. Fallback to AUTHOR.")
+        default_role = db.query(models.Role).filter(models.Role.role_name == "AUTHOR").first()
+        if default_role:
+            db_user.roles.append(default_role)
+
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+# --- Các hàm Token và Utility khác (Giữ nguyên) ---
 
 def save_refresh_token(db: Session, user_id: int, token_hash: str, expires_at: datetime):
     rt = models.RefreshToken(
@@ -110,3 +133,32 @@ def set_user_single_role(db: Session, user_id: int, role_name: str):
     db.commit()
     db.refresh(user)
     return user, None
+
+def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate):
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return None
+    
+    # Cập nhật từng trường nếu có dữ liệu gửi lên
+    if user_update.full_name is not None:
+        db_user.full_name = user_update.full_name
+    
+    if user_update.email is not None:
+        # Kiểm tra xem email mới có bị trùng với người khác không
+        existing_email = get_user_by_email(db, user_update.email)
+        if existing_email and existing_email.id != user_id:
+            raise Exception("Email already exists") # Báo lỗi nếu trùng
+        db_user.email = user_update.email
+
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def delete_user(db: Session, user_id: int):
+    db_user = get_user_by_id(db, user_id)
+    if not db_user:
+        return False # Không tìm thấy để xóa
+    
+    db.delete(db_user)
+    db.commit()
+    return True

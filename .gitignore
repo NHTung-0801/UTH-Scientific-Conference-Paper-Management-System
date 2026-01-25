@@ -1,7 +1,5 @@
 # --- CHẶN FILE MÔI TRƯỜNG & BẢO MẬT ---
 .env
-.env.*
-*.env
 
 # --- CHẶN FILE RÁC PYTHON ---
 __pycache__/
