@@ -1,7 +1,9 @@
 // src/routes/AppRoutes.jsx
+import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import PrivateRoute from "./PrivateRoute";
 import { ROLES } from "../utils/constants";
+
 
 // Layouts
 import PublicLayout from "../layouts/PublicLayout";
@@ -14,17 +16,21 @@ import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
 
 // Dashboard Pages
-import AuthorDashboard from "../pages/author/AuthorDashboard"; 
-import MySubmissions from "../pages/author/MySubmissions";    
-import SubmitPaper from "../pages/author/SubmitPaper";        
+import AuthorDashboard from "../pages/author/AuthorDashboard";
+import MySubmissions from "../pages/author/MySubmissions";
+import SubmitPaper from "../pages/author/SubmitPaper";
 
 import ChairDashboard from "../pages/chair/ChairDashboard";
 import ReviewerDashboard from "../pages/reviewer/ReviewerDashboard";
 import AdminDashboard from "../pages/admin/AdminDashboard";
 
-// Reviewer - Review Service pages
+// Reviewer pages
+import MyAssignments from "../pages/reviewer/MyAssignments";
+import AssignmentDetail from "../pages/reviewer/AssignmentDetail";
+import MyCOI from "../pages/reviewer/MyCOI";
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
 import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
+import COINew from "../pages/reviewer/COINew";
 
 const AppRoutes = () => {
   return (
@@ -41,31 +47,55 @@ const AppRoutes = () => {
       <Route element={<DashboardLayout />}>
         {/* AUTHOR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
-          <Route path="/author" element={<AuthorDashboard />} />
-          <Route path="/author/submissions" element={<MySubmissions />} />
-          <Route path="/author/submissions/new" element={<SubmitPaper />} />
+          <Route path="author" element={<AuthorDashboard />} />
+          <Route path="author/submissions" element={<MySubmissions />} />
+          <Route path="author/submissions/new" element={<SubmitPaper />} />
           <Route
-            path="/author/submit"
+            path="author/submit"
             element={<Navigate to="/author/submissions/new" replace />}
           />
         </Route>
 
-
         {/* CHAIR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
-          <Route path="/chair" element={<ChairDashboard />} />
+          <Route path="chair" element={<ChairDashboard />} />
         </Route>
 
         {/* ADMIN */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="admin" element={<AdminDashboard />} />
         </Route>
 
-        {/* REVIEWER (Reviewer + Admin) */}
-        <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
-          <Route path="/reviewer" element={<ReviewerDashboard />} />
-          <Route path="/reviewer/review/:assignmentId" element={<ReviewWorkspace />} />
-          <Route path="/reviewer/discussion/:paperId" element={<ReviewDiscussion />} />
+        {/* REVIEWER (Reviewer + Admin) - NESTED */}
+        <Route
+          path="reviewer"
+          element={
+            <PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />
+          }
+        >
+          {/* /reviewer */}
+          <Route index element={<ReviewerDashboard />} />
+
+          {/* /reviewer/assignments */}
+          <Route path="assignments" element={<MyAssignments />} />
+
+          {/* /reviewer/assignments/:assignmentId */}
+          <Route
+            path="assignments/:assignmentId"
+            element={<AssignmentDetail />}
+          />
+
+          {/* /reviewer/coi */}
+          <Route path="coi" element={<MyCOI />} />
+
+          {/* /reviewer/review/:assignmentId */}
+          <Route path="review/:assignmentId" element={<ReviewWorkspace />} />
+
+          <Route path="/reviewer/coi" element={<MyCOI />} />
+          <Route path="/reviewer/coi/new" element={<COINew />} />
+
+          {/* /reviewer/discussion/:paperId */}
+          <Route path="discussion/:paperId" element={<ReviewDiscussion />} />
         </Route>
       </Route>
 
