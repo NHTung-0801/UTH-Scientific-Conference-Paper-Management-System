@@ -30,6 +30,10 @@ class UserCreate(UserBase):
     password: str
     roles: List[str] = ["AUTHOR"]
 
+# ✅ THÊM MỚI: Schema dùng riêng cho Admin tạo user (Cho phép chọn Role đơn lẻ)
+class UserCreateByAdmin(UserBase):
+    password: str
+    role: str = "AUTHOR"  # Mặc định là AUTHOR nếu không chọn
 
 class UserResponse(UserBase):
     id: int
@@ -48,3 +52,7 @@ class RefreshRequest(BaseModel):
 class LogoutRequest(BaseModel):
     refresh_token: str
     all_devices: bool = False
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
