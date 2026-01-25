@@ -29,4 +29,8 @@ async def get_pdf_url(assignment_id: int, db: Session = Depends(get_db)):
     if not file_url:
         raise HTTPException(404, "file_url missing")
 
-    return {"paper_id": ass.paper_id, "version_number": latest.get("version_number"), "pdf_url": f"{SUBMISSION_SERVICE_URL}/static{file_url}"}
+    return {
+    "paper_id": ass.paper_id,
+    "version_number": latest.get("version_number"),
+    "pdf_url": f"/submission/static{file_url}",
+    }
