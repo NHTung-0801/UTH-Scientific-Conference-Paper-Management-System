@@ -12,7 +12,6 @@ export default function DashboardLayout() {
 
   return (
     <div className="min-h-screen bg-[#f8f6f6]">
-      {/* Topbar giống thiết kế */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6">
         <div className="font-black text-slate-900">UTH-ConfMS</div>
 

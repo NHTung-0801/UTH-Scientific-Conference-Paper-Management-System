@@ -25,6 +25,7 @@ class AssignmentStatus(str, enum.Enum):
     ACCEPTED = "Accepted"
     DECLINED = "Declined"
     COMPLETED = "Completed"
+    COI = "COI"
 
 
 class ConflictType(str, enum.Enum):

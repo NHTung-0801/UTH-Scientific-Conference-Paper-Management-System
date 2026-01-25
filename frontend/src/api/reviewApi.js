@@ -1,3 +1,4 @@
+
 import axiosClient from "./axiosClient";
 
 const reviewApi = {
@@ -10,12 +11,14 @@ const reviewApi = {
     });
   },
 
+  declareCOI: (payload) => axiosClient.post("/review/coi/", payload),
+
   getAssignment: (assignmentId) => axiosClient.get(`/review/assignments/${assignmentId}/`),
   updateAssignment: (assignmentId, payload) =>
     axiosClient.patch(`/review/assignments/${assignmentId}/`, payload),
 
   getPaperPdfUrlByAssignment: (assignmentId) =>
-    axiosClient.get(`/review/assignments/${assignmentId}/paper-pdf/`),
+    axiosClient.get(`/review/papers/${assignmentId}/pdf-url`),
 
   listReviews: ({ assignmentId } = {}) =>
     axiosClient.get("/review/reviews/", {
@@ -29,8 +32,10 @@ const reviewApi = {
   addCriteria: (reviewId, payload) =>
     axiosClient.post(`/review/reviews/${reviewId}/criterias/`, payload),
 
-  listDiscussionsByPaper: (paperId) =>
-    axiosClient.get(`/review/discussions/paper/${paperId}/`),
+  updateCriteria: (reviewId, criteriaId, payload) =>
+    axiosClient.patch(`/review/reviews/${reviewId}/criterias/${criteriaId}/`, payload),
+
+  listDiscussionsByPaper: (paperId) => axiosClient.get(`/review/discussions/paper/${paperId}/`),
   createDiscussion: (payload) => axiosClient.post("/review/discussions/", payload),
 };
 
