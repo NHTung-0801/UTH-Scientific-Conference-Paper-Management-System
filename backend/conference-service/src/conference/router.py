@@ -6,6 +6,7 @@ from src.conference.schemas import ConferenceDeleteResult
 from sqlalchemy import text
 from datetime import time , date, datetime
 
+
 from src.conference.schemas import (
     ConferenceCreate,
     ConferenceUpdate,
@@ -39,7 +40,7 @@ def get_conference_status(conference):
         return "ended"
     return "ongoing"
 
-router = APIRouter(prefix="/conferences", tags=["Conferences"])
+router = APIRouter(tags=["Conferences"])
 
 # =========================
 # CONFIG UPLOAD
