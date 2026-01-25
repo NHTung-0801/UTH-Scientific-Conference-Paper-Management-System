@@ -7,12 +7,12 @@ const CONFERENCE_URL = process.env.REACT_APP_CONFERENCE_URL || "http://localhost
 const conferenceApi = {
     // Lấy danh sách hội nghị (có thể thêm params limit để lấy 3-4 cái mới nhất)
     getAll: (params) => {
-        return axiosClient.get(`${CONFERENCE_URL}/api/conferences`, { params });
+        return axiosClient.get(`${CONFERENCE_URL}/conferences`, { params });
     },
 
     // Lấy chi tiết 1 hội nghị theo ID
     getById: (id) => {
-        return axiosClient.get(`${CONFERENCE_URL}/api/conferences/${id}`);
+        return axiosClient.get(`${CONFERENCE_URL}/conferences/${id}`);
     }
 };
 

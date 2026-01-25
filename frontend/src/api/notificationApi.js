@@ -1,15 +1,10 @@
-import axiosClient from './axiosClient';
+import axiosClient from "./axiosClient";
 
-const BASE_URL = process.env.REACT_APP_NOTIFICATION_URL;
+const NOTI_PREFIX = process.env.REACT_APP_NOTIFICATION_PREFIX || "";
 
 const notificationApi = {
-  getMyNotifications: () => {
-    return axiosClient.get(`${BASE_URL}/notifications/my-notifications`);
-  },
-
-  markAsRead: (id) => {
-    return axiosClient.put(`${BASE_URL}/notifications/${id}/read`);
-  }
+  getMyInbox: () => axiosClient.get(`${NOTI_PREFIX}/api/notifications/me`),
+  markRead: (id) => axiosClient.put(`${NOTI_PREFIX}/api/notifications/${id}/read`),
 };
 
 export default notificationApi;

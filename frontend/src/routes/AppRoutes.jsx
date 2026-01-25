@@ -1,5 +1,5 @@
 // src/routes/AppRoutes.jsx
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import PrivateRoute from "./PrivateRoute";
 import { ROLES } from "../utils/constants";
 
@@ -8,16 +8,19 @@ import PublicLayout from "../layouts/PublicLayout";
 import DashboardLayout from "../layouts/DashboardLayout";
 
 // Public Pages
+import HomePage from "../pages/public/HomePage";
+import ConferenceDetail from "../pages/public/ConferenceDetail";
 import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
-import HomePage from "../pages/public/HomePage";
 
 // Dashboard Pages
-import AuthorDashboard from "../pages/author/AuthorDashboard";
+import AuthorDashboard from "../pages/author/AuthorDashboard"; 
+import MySubmissions from "../pages/author/MySubmissions";    
+import SubmitPaper from "../pages/author/SubmitPaper";        
+
 import ChairDashboard from "../pages/chair/ChairDashboard";
 import ReviewerDashboard from "../pages/reviewer/ReviewerDashboard";
 import AdminDashboard from "../pages/admin/AdminDashboard";
-import ConferenceDetail from '../pages/public/ConferenceDetail';
 
 // Reviewer - Review Service pages
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
@@ -26,33 +29,39 @@ import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* 1. PUBLIC ROUTES (Ai cũng xem được) */}
+      {/* 1) PUBLIC ROUTES */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/conference/:id" element={<ConferenceDetail />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/conference/:id" element={<ConferenceDetail />} />
       </Route>
 
-      {/* 2. PROTECTED ROUTES (Cần đăng nhập) */}
+      {/* 2) PROTECTED ROUTES */}
       <Route element={<DashboardLayout />}>
-        {/* --- Khu vực AUTHOR --- */}
+        {/* AUTHOR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
           <Route path="/author" element={<AuthorDashboard />} />
-          {/* Ví dụ mở rộng sau này: <Route path="/author/submit" element={<SubmitPaper />} /> */}
+          <Route path="/author/submissions" element={<MySubmissions />} />
+          <Route path="/author/submissions/new" element={<SubmitPaper />} />
+          <Route
+            path="/author/submit"
+            element={<Navigate to="/author/submissions/new" replace />}
+          />
         </Route>
 
-        {/* --- Khu vực CHAIR --- */}
+
+        {/* CHAIR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
           <Route path="/chair" element={<ChairDashboard />} />
         </Route>
 
-        {/* --- Khu vực ADMIN --- */}
+        {/* ADMIN */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
           <Route path="/admin" element={<AdminDashboard />} />
         </Route>
 
-        {/* --- Khu vực REVIEWER --- */}
+        {/* REVIEWER (Reviewer + Admin) */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
           <Route path="/reviewer" element={<ReviewerDashboard />} />
           <Route path="/reviewer/review/:assignmentId" element={<ReviewWorkspace />} />
@@ -60,7 +69,7 @@ const AppRoutes = () => {
         </Route>
       </Route>
 
-      {/* 3. CATCH ALL (Trang 404) */}
+      {/* 3) 404 */}
       <Route
         path="*"
         element={

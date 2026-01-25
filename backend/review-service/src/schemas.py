@@ -106,7 +106,6 @@ class COIOut(BaseModel):
 # ---------- Discussions ----------
 class DiscussionCreate(BaseModel):
     paper_id: int
-    sender_id: int
     content: str
     parent_id: Optional[int] = None
 
