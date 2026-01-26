@@ -1,6 +1,31 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/layout/Sidebar";
-import Footer from "../components/layout/Footer";
+import React from "react";
+import { Outlet, useLocation } from "react-router-dom";
+
+const BreadCrumb = () => {
+  const { pathname } = useLocation();
+
+  const map = {
+    "/reviewer": "Tổng quan",
+    "/reviewer/assignments": "Bài báo chấm điểm",
+    "/reviewer/coi": "Khai báo COI",
+  };
+
+  const title =
+    Object.entries(map).find(([k]) => pathname === k)?.[1] ||
+    (pathname.includes("/reviewer/review/") ? "Review Form" : "Trang");
+
+  return (
+    <div className="flex items-center gap-2 text-sm text-slate-500">
+      <span className="hover:text-primary transition-colors cursor-pointer">
+        Trang chủ
+      </span>
+      <span className="material-symbols-outlined text-xs">chevron_right</span>
+      <span className="text-slate-900 font-medium">{title}</span>
+    </div>
+  );
+};
 
 export default function DashboardLayout() {
   return (
@@ -17,8 +42,6 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
-
-      <Footer />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 // src/routes/AppRoutes.jsx
+import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import PrivateRoute from "./PrivateRoute";
 import { ROLES } from "../utils/constants";
@@ -6,7 +7,7 @@ import { ROLES } from "../utils/constants";
 // Layouts
 import PublicLayout from "../layouts/PublicLayout";
 import DashboardLayout from "../layouts/DashboardLayout";
-import AdminLayout from "../layouts/AdminLayout"; // ✅ Mới thêm
+import AdminLayout from "../layouts/AdminLayout";
 
 // Public Pages
 import HomePage from "../pages/public/HomePage";
@@ -14,21 +15,26 @@ import ConferenceDetail from "../pages/public/ConferenceDetail";
 import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
 
-// Dashboard Pages
-import AuthorDashboard from "../pages/author/AuthorDashboard"; 
-import MySubmissions from "../pages/author/MySubmissions";    
-import SubmitPaper from "../pages/author/SubmitPaper";        
+// Author Pages
+import AuthorDashboard from "../pages/author/AuthorDashboard";
+import MySubmissions from "../pages/author/MySubmissions";
+import SubmitPaper from "../pages/author/SubmitPaper";
 
+// Chair Pages
 import ChairDashboard from "../pages/chair/ChairDashboard";
+
+// Reviewer Pages
 import ReviewerDashboard from "../pages/reviewer/ReviewerDashboard";
-
-// Admin Pages
-import AdminDashboard from "../pages/admin/AdminDashboard"; // Đây là file chứa bảng User (Code cũ)
-import DashboardOverview from "../pages/admin/DashboardOverview"; // ✅ Trang tổng quan mới
-
-// Reviewer - Review Service pages
+import MyAssignments from "../pages/reviewer/MyAssignments";
+import AssignmentDetail from "../pages/reviewer/AssignmentDetail";
+import MyCOI from "../pages/reviewer/MyCOI";
+import COINew from "../pages/reviewer/COINew";
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
 import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
+
+// Admin Pages
+import AdminDashboard from "../pages/admin/AdminDashboard"; // Quản lý user (code cũ)
+import DashboardOverview from "../pages/admin/DashboardOverview"; // Tổng quan mới
 
 const AppRoutes = () => {
   return (
@@ -42,9 +48,7 @@ const AppRoutes = () => {
       </Route>
 
       {/* 2) GENERAL DASHBOARD (Author, Chair, Reviewer) */}
-      {/* Giữ nguyên DashboardLayout cũ cho các role này */}
       <Route element={<DashboardLayout />}>
-        
         {/* AUTHOR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
           <Route path="/author" element={<AuthorDashboard />} />
@@ -62,35 +66,70 @@ const AppRoutes = () => {
           <Route path="/chair" element={<ChairDashboard />} />
         </Route>
 
-        {/* REVIEWER */}
-        <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
-          <Route path="/reviewer" element={<ReviewerDashboard />} />
-          <Route path="/reviewer/review/:assignmentId" element={<ReviewWorkspace />} />
-          <Route path="/reviewer/discussion/:paperId" element={<ReviewDiscussion />} />
+        {/* REVIEWER (Reviewer + Admin) - NESTED */}
+        <Route
+          path="/reviewer"
+          element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}
+        >
+          {/* /reviewer */}
+          <Route index element={<ReviewerDashboard />} />
+
+          {/* /reviewer/assignments */}
+          <Route path="assignments" element={<MyAssignments />} />
+
+          {/* /reviewer/assignments/:assignmentId */}
+          <Route path="assignments/:assignmentId" element={<AssignmentDetail />} />
+
+          {/* /reviewer/coi */}
+          <Route path="coi" element={<MyCOI />} />
+
+          {/* /reviewer/coi/new */}
+          <Route path="coi/new" element={<COINew />} />
+
+          {/* /reviewer/review/:assignmentId */}
+          <Route path="review/:assignmentId" element={<ReviewWorkspace />} />
+
+          {/* /reviewer/discussion/:paperId */}
+          <Route path="discussion/:paperId" element={<ReviewDiscussion />} />
         </Route>
       </Route>
 
       {/* 3) ADMIN DASHBOARD (New Layout) */}
-      {/* ✅ Tách riêng Admin ra dùng AdminLayout mới để có Sidebar chuyên biệt */}
       <Route element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
         <Route path="/admin" element={<AdminLayout />}>
-           {/* Mặc định vào /admin sẽ nhảy sang dashboard */}
-           <Route index element={<Navigate to="dashboard" replace />} />
-           
-           {/* Trang Tổng quan (Biểu đồ) */}
-           <Route path="dashboard" element={<DashboardOverview />} />
-           
-           {/* Trang Quản lý User (File AdminDashboard cũ của bạn) */}
-           <Route path="users" element={<AdminDashboard />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardOverview />} />
+          <Route path="users" element={<AdminDashboard />} />
 
-           {/* Các trang chưa làm (Placeholder) */}
-           <Route path="conferences" element={<div className="p-10 font-bold text-gray-500">Quản lý Hội nghị (Đang phát triển)</div>} />
-           <Route path="settings" element={<div className="p-10 font-bold text-gray-500">Cấu hình hệ thống (Đang phát triển)</div>} />
-           <Route path="audit" element={<div className="p-10 font-bold text-gray-500">Nhật ký hệ thống (Đang phát triển)</div>} />
+          {/* Placeholder */}
+          <Route
+            path="conferences"
+            element={
+              <div className="p-10 font-bold text-gray-500">
+                Quản lý Hội nghị (Đang phát triển)
+              </div>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <div className="p-10 font-bold text-gray-500">
+                Cấu hình hệ thống (Đang phát triển)
+              </div>
+            }
+          />
+          <Route
+            path="audit"
+            element={
+              <div className="p-10 font-bold text-gray-500">
+                Nhật ký hệ thống (Đang phát triển)
+              </div>
+            }
+          />
         </Route>
       </Route>
 
-      {/* 4) 404 Not Found */}
+      {/* 4) 404 */}
       <Route
         path="*"
         element={

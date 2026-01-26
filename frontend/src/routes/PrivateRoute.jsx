@@ -1,4 +1,5 @@
-
+// src/routes/PrivateRoute.jsx
+import React from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { isAuthenticated, getUserRole } from "../utils/auth";
 
@@ -11,12 +12,16 @@ const PrivateRoute = ({ allowedRoles = [] }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // Có đăng nhập nhưng không có role -> chặn
   const normalizedUserRole = (userRole || "").toUpperCase();
-  const normalizedAllowed = (allowedRoles || []).map((r) => (r || "").toUpperCase());
+  const normalizedAllowed = (allowedRoles || []).map((r) =>
+    (r || "").toUpperCase()
+  );
 
-  // Nếu có khai allowedRoles mà role hiện tại không nằm trong danh sách -> chặn
-  if (normalizedAllowed.length > 0 && !normalizedAllowed.includes(normalizedUserRole)) {
+  // Có allowedRoles mà role hiện tại không nằm trong danh sách -> chặn
+  if (
+    normalizedAllowed.length > 0 &&
+    !normalizedAllowed.includes(normalizedUserRole)
+  ) {
     return (
       <div style={{ padding: 24 }}>
         <div
@@ -35,7 +40,7 @@ const PrivateRoute = ({ allowedRoles = [] }) => {
     );
   }
 
-  // OK -> render các route con
+  // OK -> render route con
   return <Outlet />;
 };
 

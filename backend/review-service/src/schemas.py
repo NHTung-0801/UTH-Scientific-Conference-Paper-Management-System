@@ -53,6 +53,12 @@ class ReviewCriteriaCreate(BaseModel):
     weight: Optional[float] = None
     comment: Optional[str] = None
 
+class ReviewCriteriaUpdate(BaseModel):
+    criteria_name: Optional[str] = None
+    grade: Optional[int] = None
+    weight: Optional[float] = None
+    comment: Optional[str] = None
+
 class ReviewCriteriaOut(BaseModel):
     id: int
     review_id: int
