@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Bool
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
+from sqlalchemy.dialects.mysql import JSON
 import enum
 
 # 1. Định nghĩa Enum trạng thái bài báo
@@ -20,7 +21,7 @@ class Paper(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
     abstract = Column(Text, nullable=False)
-    keywords = Column(String(255), nullable=True, comment="Từ khóa bài báo")
+    keywords = Column(JSON, nullable=False, default=list, comment="Từ khóa bài báo")
 
     # Các ID liên kết logic (Foreign Key logic)
     conference_id = Column(Integer, nullable=False)
@@ -43,7 +44,6 @@ class Paper(Base):
     
     # 1 paper thuộc nhiều topics (chủ đề)
     topics = relationship("PaperTopic", back_populates="paper", cascade="all, delete-orphan")
-    versions = relationship("PaperVersion", back_populates="paper", cascade="all, delete-orphan")
 
 
 # 3. Bảng Tác giả (Paper Authors)
@@ -57,8 +57,8 @@ class PaperAuthor(Base):
     email = Column(String(255), nullable=False)
     organization = Column(String(255), nullable=True)
 
-    is_corresponding = Column(Boolean, default=False) # Là tác giả liên hệ chính?
-    user_id = Column(Integer, nullable=True) # Có thể null nếu tác giả đó chưa có tài khoản hệ thống
+    is_corresponding = Column(Boolean, default=False) 
+    user_id = Column(Integer, nullable=True)
 
     paper = relationship("Paper", back_populates="authors")
 

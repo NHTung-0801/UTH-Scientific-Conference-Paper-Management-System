@@ -54,6 +54,7 @@ const AppRoutes = () => {
           <Route path="/author" element={<AuthorDashboard />} />
           <Route path="/author/submissions" element={<MySubmissions />} />
           <Route path="/author/submissions/new" element={<SubmitPaper />} />
+          <Route path="/author/submissions/:paperId" element={<MySubmissions />} />
           <Route
             path="/author/submit"
             element={<Navigate to="/author/submissions/new" replace />}

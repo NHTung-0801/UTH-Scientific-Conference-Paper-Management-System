@@ -35,9 +35,9 @@ const Sidebar = () => {
   // =========================
   if (hasRole(ROLES.AUTHOR) && isAuthorArea) {
     const authorMenu = [
-      { to: "/author", label: "Trang chủ", icon: "home" },
+      { to: "/author", label: "Tổng quan", icon: "home" },
       { to: "/author/submissions", label: "Bài báo của tôi", icon: "article" },
-      { to: "/author/submit", label: "Nộp bài mới", icon: "cloud_upload" },
+      { to: "/author/submissions/new", label: "Nộp bài mới", icon: "cloud_upload" },
       { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person" },
       { to: "/author/settings", label: "Cài đặt", icon: "settings" },
     ];
@@ -257,7 +257,18 @@ const Sidebar = () => {
   // =========================
   const menu = [
     { to: "/", label: "Trang chủ", icon: "home" },
-    ...(hasRole(ROLES.AUTHOR) ? [{ to: "/author", label: "Khu vực Tác giả", icon: "edit_document" }] : []),
+
+    ...(hasRole(ROLES.AUTHOR)
+      ? [
+          { to: "/author", label: "Tổng quan", icon: "home" },
+          { to: "/author/submissions", label: "Bài báo của tôi", icon: "article" },
+          { to: "/author/submissions/new", label: "Nộp bài mới", icon: "cloud_upload" },
+          { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person" },
+          { to: "/author/settings", label: "Cài đặt", icon: "settings" },
+          
+        ]
+      : []),
+
     ...(hasRole(ROLES.REVIEWER) || hasRole(ROLES.ADMIN)
       ? [{ to: "/reviewer", label: "Reviewer Dashboard", icon: "rate_review" }]
       : []),
