@@ -5,7 +5,8 @@ import { ROLES } from "../utils/constants";
 
 // Layouts
 import PublicLayout from "../layouts/PublicLayout";
-import DashboardLayout from "../layouts/DashboardLayout";
+import DashboardLayout from "../layouts/DashboardLayout"; 
+// import AdminLayout from "../layouts/AdminLayout"; // ❌ BỎ file này nếu không dùng nữa
 
 // Public Pages
 import HomePage from "../pages/public/HomePage";
@@ -13,27 +14,31 @@ import ConferenceDetail from "../pages/public/ConferenceDetail";
 import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
 
-// Dashboard Pages
-import AuthorDashboard from "../pages/author/AuthorDashboard"; 
-import MySubmissions from "../pages/author/MySubmissions";    
-import SubmitPaper from "../pages/author/SubmitPaper";   
-import PaperDetail from "../pages/author/PaperDetail";   
+// Dashboard Pages (Author, Chair, Reviewer...)
+import AuthorDashboard from "../pages/author/AuthorDashboard";
+import MySubmissions from "../pages/author/MySubmissions";
+import SubmitPaper from "../pages/author/SubmitPaper";
+import PaperDetail from "../pages/author/PaperDetail";
 import AddCoAuthor from "../pages/author/AddCoAuthor";
 import EditPaper from "../pages/author/EditPaper";
 import EditSubmissionAuthor from "../pages/author/EditSubmissionAuthor";
 import Notifications from "../pages/author/Notifications";
 
-
 import ChairDashboard from "../pages/chair/ChairDashboard";
+
+// Reviewer Pages
 import ReviewerDashboard from "../pages/reviewer/ReviewerDashboard";
-
-// Admin Pages
-import AdminDashboard from "../pages/admin/AdminDashboard"; // Đây là file chứa bảng User (Code cũ)
-import DashboardOverview from "../pages/admin/DashboardOverview"; // ✅ Trang tổng quan mới
-
-// Reviewer - Review Service pages
+import MyAssignments from "../pages/reviewer/MyAssignments";
+import AssignmentDetail from "../pages/reviewer/AssignmentDetail";
+import MyCOI from "../pages/reviewer/MyCOI";
+import COINew from "../pages/reviewer/COINew";
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
 import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
+import PaperBidding from "../pages/reviewer/PaperBidding";
+
+// Admin Pages
+import AdminDashboard from "../pages/admin/AdminDashboard";
+import DashboardOverview from "../pages/admin/DashboardOverview";
 
 const AppRoutes = () => {
   return (
@@ -46,8 +51,7 @@ const AppRoutes = () => {
         <Route path="/register" element={<Register />} />
       </Route>
 
-      {/* 2) GENERAL DASHBOARD (Author, Chair, Reviewer) */}
-      {/* Giữ nguyên DashboardLayout cũ cho các role này */}
+      {/* 2) DASHBOARD CHUNG CHO TẤT CẢ ROLE (BAO GỒM ADMIN) */}
       <Route element={<DashboardLayout />}>
         
         {/* AUTHOR */}
@@ -60,10 +64,7 @@ const AppRoutes = () => {
           <Route path="/author/submissions/:id/authors/new" element={<AddCoAuthor />} />
           <Route path="/author/submissions/:id/edit" element={<EditPaper />} />
           <Route path="/author/submissions/:id/authors/:authorId/edit" element={<EditSubmissionAuthor />} />
-          <Route
-            path="/author/submit"
-            element={<Navigate to="/author/submissions/new" replace />}
-          />
+          <Route path="/author/submit" element={<Navigate to="/author/submissions/new" replace />} />
         </Route>
 
         {/* CHAIR */}
@@ -72,37 +73,36 @@ const AppRoutes = () => {
         </Route>
 
         {/* REVIEWER */}
-        <Route element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
-          <Route path="/reviewer" element={<ReviewerDashboard />} />
-          <Route path="/reviewer/review/:assignmentId" element={<ReviewWorkspace />} />
-          <Route path="/reviewer/discussion/:paperId" element={<ReviewDiscussion />} />
+        <Route path="/reviewer" element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
+          <Route index element={<ReviewerDashboard />} />
+          <Route path="assignments" element={<MyAssignments />} />
+          <Route path="assignments/:assignmentId" element={<AssignmentDetail />} />
+          <Route path="coi" element={<MyCOI />} />
+          <Route path="coi/new" element={<COINew />} />
+          <Route path="bidding" element={<PaperBidding />} />
+          <Route path="review/:assignmentId" element={<ReviewWorkspace />} />
+          <Route path="discussion/:paperId" element={<ReviewDiscussion />} />
         </Route>
 
-        {/* Admin */}
-        <Route element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
-          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-
-          {/* các trang admin khác */}
-          <Route path="/admin/dashboard" element={<DashboardOverview />} />
-          <Route path="/admin/users" element={<AdminDashboard />} />
-
-          <Route path="/admin/conferences" element={<div className="p-10 font-bold text-gray-500">Quản lý Hội nghị (Đang phát triển)</div>} />
-          <Route path="/admin/settings" element={<div className="p-10 font-bold text-gray-500">Cấu hình hệ thống (Đang phát triển)</div>} />
-          <Route path="/admin/audit" element={<div className="p-10 font-bold text-gray-500">Nhật ký hệ thống (Đang phát triển)</div>} />
+        {/* ADMIN (Đưa vào trong DashboardLayout) */}
+        <Route path="/admin" element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardOverview />} />
+            <Route path="users" element={<AdminDashboard />} />
+            
+            {/* Các trang giữ chỗ */}
+            <Route path="conferences" element={<div className="p-10 font-bold text-gray-500">Quản lý Hội nghị (Đang phát triển)</div>} />
+            <Route path="settings" element={<div className="p-10 font-bold text-gray-500">Cấu hình hệ thống (Đang phát triển)</div>} />
+            <Route path="audit" element={<div className="p-10 font-bold text-gray-500">Nhật ký hệ thống (Đang phát triển)</div>} />
         </Route>
 
-      </Route>
+      </Route> 
 
-      {/* 4) 404 Not Found */}
-      <Route
-        path="*"
-        element={
+      {/* 404 */}
+      <Route path="*" element={
           <div className="text-center mt-5" style={{ padding: "50px" }}>
             <h1>404 - Không tìm thấy trang</h1>
-            <p>Đường dẫn bạn truy cập không tồn tại.</p>
-            <a href="/" className="btn btn-primary">
-              Về trang chủ
-            </a>
+            <a href="/" className="btn btn-primary">Về trang chủ</a>
           </div>
         }
       />

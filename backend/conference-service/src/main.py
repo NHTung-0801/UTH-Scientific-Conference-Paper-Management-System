@@ -28,9 +28,9 @@ def on_startup():
     Base.metadata.create_all(bind=engine)
 
 # include routers
-app.include_router(conference_router, prefix="/conferences")
-app.include_router(track_router, prefix="/tracks")
-app.include_router(topic_router, prefix="/topics")
+app.include_router(conference_router) 
+app.include_router(track_router) 
+app.include_router(topic_router)
 
 
 

@@ -1,3 +1,4 @@
+// src/pages/reviewer/ReviewerDashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import reviewApi from "../../api/reviewApi";
@@ -27,14 +28,14 @@ const TABS = [
   { key: STATUS.COI, label: "COI" },
 ];
 
-function daysLeft(dueDate) {
-  if (!dueDate) return null;
-  const due = new Date(dueDate).getTime();
-  if (!Number.isFinite(due)) return null;
-  const now = Date.now();
-  const diff = due - now;
-  const d = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  return Number.isFinite(d) ? d : null;
+function normalizeStatus(raw) {
+  const s = (raw ?? "").toString().trim().toLowerCase();
+  if (s === "invited") return STATUS.INVITED;
+  if (s === "accepted") return STATUS.ACCEPTED;
+  if (s === "completed") return STATUS.COMPLETED;
+  if (s === "declined") return STATUS.DECLINED;
+  if (s === "coi" || s === "conflict" || s === "conflict_of_interest") return STATUS.COI;
+  return STATUS.INVITED;
 }
 
 function formatDateVN(dueDate) {
@@ -47,88 +48,50 @@ function formatDateVN(dueDate) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+function daysLeft(dueDate) {
+  if (!dueDate) return null;
+  const due = new Date(dueDate).getTime();
+  if (!Number.isFinite(due)) return null;
+  const now = Date.now();
+  const diff = due - now;
+  const d = Math.ceil(diff / (1000 * 60 * 60 * 24));
+  return Number.isFinite(d) ? d : null;
+}
+
 function clampText(v, fallback = "") {
   const s = (v ?? "").toString().trim();
   return s.length ? s : fallback;
 }
 
-/**
- * Normalize status from backend (case-insensitive)
- * plus fallback logic if backend returns custom strings.
- */
-function normalizeStatus(raw) {
-  const s = (raw ?? "").toString().trim();
-  if (!s) return STATUS.INVITED;
-
-  const u = s.toLowerCase();
-  if (u === "invited") return STATUS.INVITED;
-  if (u === "accepted") return STATUS.ACCEPTED;
-  if (u === "completed") return STATUS.COMPLETED;
-  if (u === "declined") return STATUS.DECLINED;
-
-  // If backend already supports COI:
-  if (u === "coi" || u === "conflict" || u === "conflict_of_interest")
-    return STATUS.COI;
-
-  // Unknown -> keep but fallback to invited
-  return STATUS.INVITED;
-}
-
-function chipClassByStatus(status) {
+function badgeByStatus(status) {
   switch (status) {
     case STATUS.INVITED:
-      return "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:ring-blue-700/40";
+      return "bg-blue-50 text-blue-700 border-blue-100";
     case STATUS.ACCEPTED:
-      return "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:ring-amber-700/40";
+      return "bg-amber-50 text-amber-700 border-amber-100";
     case STATUS.COMPLETED:
-      return "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:ring-emerald-700/40";
+      return "bg-emerald-50 text-emerald-700 border-emerald-100";
     case STATUS.DECLINED:
-      return "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-zinc-800 dark:text-slate-200 dark:ring-zinc-700/60";
+      return "bg-slate-100 text-slate-700 border-slate-200";
     case STATUS.COI:
-      return "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:ring-rose-700/40";
+      return "bg-rose-50 text-rose-700 border-rose-100";
     default:
-      return "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-zinc-800 dark:text-slate-200 dark:ring-zinc-700/60";
+      return "bg-slate-100 text-slate-700 border-slate-200";
   }
-}
-
-function dueBadge(dLeft) {
-  if (dLeft === null) return null;
-  // SLA display
-  if (dLeft < 0) {
-    return {
-      icon: "warning",
-      text: "Quá hạn",
-      cls: "text-rose-600 dark:text-rose-300 font-bold",
-    };
-  }
-  if (dLeft <= 3) {
-    return {
-      icon: "timer",
-      text: `Còn ${dLeft} ngày`,
-      cls: "text-primary font-bold",
-    };
-  }
-  return {
-    icon: "schedule",
-    text: `Còn ${dLeft} ngày`,
-    cls: "text-slate-500 dark:text-slate-400 font-medium",
-  };
 }
 
 export default function ReviewerDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const reviewerId = user?.id;
+
   const [active, setActive] = useState(STATUS.INVITED);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
   const [err, setErr] = useState("");
 
-  // Optional UI states
   const [q, setQ] = useState("");
-
-  // Your context says you might test by admin; reviewerId should be from logged-in user.
-  const reviewerId = user?.id;
 
   const load = async () => {
     if (!reviewerId) return;
@@ -138,31 +101,21 @@ export default function ReviewerDashboard() {
       const res = await reviewApi.listAssignments({ reviewerId });
       const raw = res?.data ?? [];
 
-      // Normalize + enrich fields for UI
       const normalized = raw.map((x) => {
         const st = normalizeStatus(x.status);
         const dLeft = daysLeft(x.due_date);
-        const isOverdue = dLeft !== null && dLeft < 0 && st !== STATUS.COMPLETED;
+        const overdue = dLeft !== null && dLeft < 0 && st !== STATUS.COMPLETED;
         return {
           ...x,
           status: st,
           __daysLeft: dLeft,
-          __isOverdue: isOverdue,
-          // Derived: show SLA line clearly
-          __slaText:
-            dLeft === null
-              ? "SLA: Chưa có hạn chót"
-              : dLeft < 0
-              ? `SLA: Quá hạn ${Math.abs(dLeft)} ngày`
-              : `SLA: Còn ${dLeft} ngày`,
+          __overdue: overdue,
         };
       });
 
       setItems(normalized);
     } catch (e) {
-      setErr(
-        e?.response?.data?.detail || e?.message || "Không tải được danh sách"
-      );
+      setErr(e?.response?.data?.detail || e?.message || "Không tải được danh sách");
     } finally {
       setLoading(false);
     }
@@ -185,9 +138,20 @@ export default function ReviewerDashboard() {
     return c;
   }, [items]);
 
+  const stats = useMemo(() => {
+    const total = items.length;
+    const invited = counts[STATUS.INVITED] ?? 0;
+    const accepted = counts[STATUS.ACCEPTED] ?? 0;
+    const completed = counts[STATUS.COMPLETED] ?? 0;
+    const declined = counts[STATUS.DECLINED] ?? 0;
+    const coi = counts[STATUS.COI] ?? 0;
+    const overdue = items.filter((x) => x.__overdue).length;
+
+    return { total, invited, accepted, completed, declined, coi, overdue };
+  }, [items, counts]);
+
   const filtered = useMemo(() => {
     const list = items.filter((x) => x.status === active);
-
     const keyword = q.trim().toLowerCase();
     if (!keyword) return list;
 
@@ -196,16 +160,13 @@ export default function ReviewerDashboard() {
       const track = (x.track_name ?? x.track ?? "").toString().toLowerCase();
       const pid = (x.paper_id ?? "").toString().toLowerCase();
       const aid = (x.id ?? "").toString().toLowerCase();
-      return (
-        title.includes(keyword) ||
-        track.includes(keyword) ||
-        pid.includes(keyword) ||
-        aid.includes(keyword)
-      );
+      return title.includes(keyword) || track.includes(keyword) || pid.includes(keyword) || aid.includes(keyword);
     });
   }, [items, active, q]);
 
   // Actions
+  const goAssignments = () => navigate("/reviewer/assignments");
+
   const onAccept = async (assignmentId) => {
     await reviewApi.updateAssignment(assignmentId, { status: STATUS.ACCEPTED });
     await load();
@@ -216,7 +177,6 @@ export default function ReviewerDashboard() {
     await load();
   };
 
-  // COI declaration
   const onDeclareCOI = async (a) => {
     await reviewApi.declareCOI({
       paper_id: a.paper_id,
@@ -227,135 +187,118 @@ export default function ReviewerDashboard() {
     await load();
   };
 
-
-  // Rebuttal/Discussion navigation (optional in your routes: /reviewer/discussion/:paperId exists)
-  const openDiscussion = (paperId) => navigate(`/reviewer/discussion/${paperId}`);
-
-  // Review workspace (exists in routes: /reviewer/review/:assignmentId)
-  const openWorkspace = (assignmentId) =>
-    navigate(`/reviewer/review/${assignmentId}`);
-
-  // NOTE: Double-blind rule: DO NOT show author info. We intentionally do not render author fields.
-
-  const stats = useMemo(() => {
-    const total = items.length;
-    const completed = counts[STATUS.COMPLETED] ?? 0;
-    const accepted = counts[STATUS.ACCEPTED] ?? 0;
-    const invited = counts[STATUS.INVITED] ?? 0;
-    const declined = counts[STATUS.DECLINED] ?? 0;
-    const coi = counts[STATUS.COI] ?? 0;
-
-    const inProgress = accepted; // accepted ≈ in progress (until completed)
-    const pendingInvites = invited;
-
-    // Overdue derived:
-    const overdue = items.filter((x) => x.__isOverdue).length;
-
-    return { total, completed, inProgress, pendingInvites, declined, coi, overdue };
-  }, [items, counts]);
-
   return (
-    <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-200">
-      <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-16 py-8">
-        <div className="max-w-6xl mx-auto flex flex-col gap-6">
-          {/* Heading */}
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <h1 className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                Reviewer Dashboard
-              </h1>
-              <p className="text-slate-500 dark:text-slate-400 text-base">
-                Quản lý lời mời, trạng thái assignment, SLA review và thảo luận/rebuttal (nếu có).
-              </p>
-            </div>
+    <div className="bg-[#f6f8fb] text-slate-900 min-h-[calc(100vh-56px)]">
+      <main className="max-w-6xl mx-auto px-4 md:px-6 py-8">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight">Reviewer Dashboard</h1>
+            <p className="mt-2 text-slate-500">
+              Quản lý lời mời phản biện, SLA, và thao tác review/discussion.
+            </p>
+          </div>
 
-            {/* Search */}
-            <div className="w-full md:w-[360px]">
-              <div className="relative">
-                <span
-                  className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  style={{ fontSize: 20 }}
-                >
-                  search
-                </span>
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-10 pr-3 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                  placeholder="Tìm paper / track / ID..."
-                  type="text"
-                />
-              </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={goAssignments}
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black bg-[#1976d2] text-white hover:opacity-95"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+                list_alt
+              </span>
+              My Assignments
+            </button>
+          </div>
+        </div>
+
+        {/* Notice box */}
+        <div className="mt-6 bg-white border border-slate-200 rounded-2xl p-5 flex items-start gap-4">
+          <div className="size-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-100">
+            <span className="material-symbols-outlined">info</span>
+          </div>
+          <div className="flex-1">
+            <div className="font-extrabold text-slate-900">Lưu ý quan trọng</div>
+            <div className="text-sm text-slate-600 mt-1">
+              Nếu bạn <b>Khai báo COI</b> thì hệ thống có thể <b>auto-decline</b> các lời mời liên quan (Invited/Accepted).
+              Vui lòng đảm bảo đánh giá đúng quy định double-blind.
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/reviewer/coi")}
+            className="hidden sm:inline-flex items-center gap-2 text-sm font-black text-[#1976d2] hover:underline"
+            title="Đi tới trang COI"
+          >
+            Xem COI
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+              open_in_new
+            </span>
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="text-sm text-slate-500 font-semibold">Tổng assignment</div>
+            <div className="mt-2 text-4xl font-black">{stats.total}</div>
+            <div className="mt-2 text-xs text-slate-500">
+              Mời mới: <b>{stats.invited}</b> • Đã nhận: <b>{stats.accepted}</b>
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">
-                  Tổng assignment
-                </p>
-                <p className="text-3xl font-extrabold text-slate-900 dark:text-white">
-                  {stats.total}
-                </p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Mời mới: <span className="font-bold">{stats.pendingInvites}</span> • Đã nhận:{" "}
-                  <span className="font-bold">{stats.inProgress}</span>
-                </p>
-              </div>
-              <div className="size-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-slate-300">
-                <span className="material-symbols-outlined" style={{ fontSize: 28 }}>
-                  assignment
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">
-                  Đã nộp review
-                </p>
-                <p className="text-3xl font-extrabold text-primary">{stats.completed}</p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Từ chối: <span className="font-bold">{stats.declined}</span> • COI:{" "}
-                  <span className="font-bold">{stats.coi}</span>
-                </p>
-              </div>
-              <div className="size-12 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600">
-                <span className="material-symbols-outlined" style={{ fontSize: 28 }}>
-                  check_circle
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">
-                  SLA / Quá hạn
-                </p>
-                <p className="text-3xl font-extrabold text-slate-900 dark:text-white">
-                  {stats.overdue}
-                </p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Quá hạn được tính khi due_date &lt; hôm nay và chưa “Đã nộp review”.
-                </p>
-              </div>
-              <div className="size-12 rounded-full bg-rose-50 dark:bg-rose-900/20 flex items-center justify-center text-rose-600">
-                <span className="material-symbols-outlined" style={{ fontSize: 28 }}>
-                  warning
-                </span>
-              </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="text-sm text-slate-500 font-semibold">Đã nộp review</div>
+            <div className="mt-2 text-4xl font-black text-emerald-600">{stats.completed}</div>
+            <div className="mt-2 text-xs text-slate-500">
+              Từ chối: <b>{stats.declined}</b> • COI: <b>{stats.coi}</b>
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="border-b border-slate-200 dark:border-slate-700 mt-2">
-            <nav aria-label="Tabs" className="-mb-px flex space-x-6 overflow-x-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="text-sm text-slate-500 font-semibold">SLA / Quá hạn</div>
+            <div className="mt-2 text-4xl font-black">{stats.overdue}</div>
+            <div className="mt-2 text-xs text-slate-500">
+              Quá hạn khi <b>due_date &lt; hôm nay</b> và chưa “Completed”.
+            </div>
+          </div>
+        </div>
+
+        {/* Search + Tabs */}
+        <div className="mt-6 bg-white border border-slate-200 rounded-2xl">
+          <div className="p-4 md:p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center gap-3 justify-between">
+            <div className="relative w-full md:max-w-[520px]">
+              <span
+                className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                style={{ fontSize: 20 }}
+              >
+                search
+              </span>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-10 pr-3 text-sm focus:ring-2 focus:ring-[#1976d2]/20 focus:outline-none"
+                placeholder="Tìm theo Paper ID / tiêu đề / track / assignment id..."
+                type="text"
+              />
+            </div>
+
+            <button
+              onClick={load}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-sm hover:bg-slate-50"
+              title="Reload"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                refresh
+              </span>
+              Tải lại
+            </button>
+          </div>
+
+          <div className="px-4 md:px-5 pt-2 border-b border-slate-200">
+            <div className="flex gap-6 overflow-x-auto">
               {TABS.map((t) => {
                 const isActive = active === t.key;
                 const n = counts[t.key] ?? 0;
-
                 return (
                   <button
                     key={t.key}
@@ -363,16 +306,16 @@ export default function ReviewerDashboard() {
                     onClick={() => setActive(t.key)}
                     className={
                       isActive
-                        ? "border-primary text-primary whitespace-nowrap border-b-[3px] py-4 px-1 text-sm font-black flex items-center gap-2"
-                        : "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-700 dark:hover:text-slate-300 whitespace-nowrap border-b-[3px] py-4 px-1 text-sm font-bold flex items-center gap-2"
+                        ? "py-3 text-sm font-black border-b-[3px] border-[#1976d2] text-[#1976d2] flex items-center gap-2"
+                        : "py-3 text-sm font-bold border-b-[3px] border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2"
                     }
                   >
                     {t.label}
                     <span
                       className={
                         isActive
-                          ? "bg-primary/10 text-primary py-0.5 px-2.5 rounded-full text-xs font-bold"
-                          : "bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 py-0.5 px-2.5 rounded-full text-xs font-bold"
+                          ? "bg-[#1976d2]/10 text-[#1976d2] px-2.5 py-0.5 rounded-full text-xs font-black"
+                          : "bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full text-xs font-black"
                       }
                     >
                       {n}
@@ -380,281 +323,153 @@ export default function ReviewerDashboard() {
                   </button>
                 );
               })}
-            </nav>
+            </div>
           </div>
 
-          {/* Content */}
-          <div className="flex flex-col gap-4 mt-2">
+          {/* Table */}
+          <div className="p-4 md:p-5">
             {loading ? (
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                <p className="text-sm text-slate-500 dark:text-slate-400">Đang tải...</p>
-              </div>
+              <div className="py-10 text-center text-sm text-slate-500">Đang tải...</div>
             ) : err ? (
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-rose-200/70 dark:border-rose-900/40 p-6">
-                <p className="text-sm font-bold text-rose-600 dark:text-rose-300">{err}</p>
-                <button
-                  onClick={load}
-                  className="mt-4 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-black shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-background-dark"
-                >
-                  Thử lại
-                </button>
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <div className="font-black text-rose-700">{err}</div>
               </div>
             ) : filtered.length === 0 ? (
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-10 text-center">
-                <p className="text-sm text-slate-400 dark:text-slate-500">
-                  Không có assignment nào trong tab này.
-                </p>
+              <div className="py-14 text-center text-sm text-slate-500">
+                Không có assignment nào trong tab này.
               </div>
             ) : (
-              <>
-                {filtered.map((a) => {
-                  const dLeft = a.__daysLeft ?? daysLeft(a.due_date);
-                  const dueVN = formatDateVN(a.due_date);
-                  const sla = a.__slaText ?? "";
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="text-left text-slate-600">
+                      <th className="px-4 py-3 font-extrabold">Mã bài</th>
+                      <th className="px-4 py-3 font-extrabold">Tiêu đề</th>
+                      <th className="px-4 py-3 font-extrabold">Track</th>
+                      <th className="px-4 py-3 font-extrabold">Deadline</th>
+                      <th className="px-4 py-3 font-extrabold">Trạng thái</th>
+                      <th className="px-4 py-3 font-extrabold text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((a) => {
+                      const paperId = a.paper_id;
+                      const assignmentId = a.id;
 
-                  const badge = dueBadge(dLeft);
+                      const title = clampText(a.paper_title ?? a.title, `Bài nộp #${paperId}`);
+                      const track = clampText(a.track_name ?? a.track, "—");
+                      const dueVN = formatDateVN(a.due_date);
+                      const statusLabel = STATUS_LABEL[a.status] ?? a.status;
 
-                  const paperId = a.paper_id;
-                  const assignmentId = a.id;
+                      const canAcceptDecline = a.status === STATUS.INVITED;
+                      const canReview = a.status === STATUS.ACCEPTED || a.status === STATUS.COMPLETED;
 
-                  const title = clampText(
-                    a.paper_title ?? a.title,
-                    `Bài nộp #${paperId}`
-                  );
+                      return (
+                        <tr key={assignmentId} className="border-t border-slate-200">
+                          <td className="px-4 py-3 font-black text-[#1976d2]">
+                            #{paperId}
+                            <div className="text-[11px] text-slate-400 font-semibold">
+                              AID #{assignmentId}
+                            </div>
+                          </td>
 
-                  const track = clampText(a.track_name ?? a.track, "Chưa phân loại");
-                  const statusLabel = STATUS_LABEL[a.status] ?? a.status;
+                          <td className="px-4 py-3">
+                            <div className="font-extrabold text-slate-900 line-clamp-2">{title}</div>
+                          </td>
 
-                  const canAcceptDecline = a.status === STATUS.INVITED;
-                  const canStartReview = a.status === STATUS.ACCEPTED;
-                  const canViewReview = a.status === STATUS.COMPLETED;
+                          <td className="px-4 py-3 text-slate-700 font-semibold">{track}</td>
 
-                  // Discussion/Rebuttal route exists in your AppRoutes: /reviewer/discussion/:paperId
-                  // If your backend returns flags like a.discussion_open or a.rebuttal_open, you can gate it.
-                  const showDiscussion =
-                    a.status === STATUS.ACCEPTED || a.status === STATUS.COMPLETED;
+                          <td className="px-4 py-3 text-slate-700 font-semibold">
+                            {dueVN || "—"}
+                            {a.__daysLeft != null ? (
+                              <div className={`text-[11px] font-black ${a.__daysLeft < 0 ? "text-rose-600" : "text-slate-400"}`}>
+                                {a.__daysLeft < 0 ? `Quá hạn ${Math.abs(a.__daysLeft)} ngày` : `Còn ${a.__daysLeft} ngày`}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-400 font-semibold">Chưa có hạn</div>
+                            )}
+                          </td>
 
-                  return (
-                    <div
-                      key={assignmentId}
-                      className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-5 md:p-6 hover:shadow-md transition-shadow duration-200"
-                    >
-                      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-                        {/* Left */}
-                        <div className="flex flex-col gap-3 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 text-xs font-bold text-slate-600 dark:text-slate-300 ring-1 ring-inset ring-slate-500/10">
-                              Paper #{paperId}
-                            </span>
-
-                            <span
-                              className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-black ring-1 ring-inset ${chipClassByStatus(
-                                a.status
-                              )}`}
-                              title="Trạng thái assignment"
-                            >
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-black ${badgeByStatus(a.status)}`}>
                               {statusLabel}
                             </span>
+                          </td>
 
-                            {badge ? (
-                              <span
-                                className={`inline-flex items-center gap-1 text-xs ${badge.cls}`}
-                                title="SLA"
-                              >
-                                <span
-                                  className="material-symbols-outlined"
-                                  style={{ fontSize: 16 }}
-                                >
-                                  {badge.icon}
-                                </span>
-                                {badge.text}
-                              </span>
-                            ) : null}
-                          </div>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end gap-2 flex-wrap">
+                              {canAcceptDecline ? (
+                                <>
+                                  <button
+                                    onClick={() => onAccept(assignmentId)}
+                                    className="px-3 py-2 rounded-lg bg-[#1976d2] text-white text-xs font-black hover:opacity-95"
+                                  >
+                                    Accept
+                                  </button>
+                                  <button
+                                    onClick={() => onDecline(assignmentId)}
+                                    className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black hover:bg-slate-50"
+                                  >
+                                    Decline
+                                  </button>
+                                  <button
+                                    onClick={() => onDeclareCOI(a)}
+                                    className="px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-black hover:bg-rose-100/60"
+                                    title="Khai COI sẽ auto-decline assignment liên quan"
+                                  >
+                                    COI
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => navigate(`/reviewer/assignments/${assignmentId}`)}
+                                    className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black hover:bg-slate-50"
+                                  >
+                                    Chi tiết
+                                  </button>
 
-                          <h3 className="text-lg md:text-xl font-black text-slate-900 dark:text-white leading-snug">
-                            {title}
-                          </h3>
+                                  <button
+                                    onClick={() => navigate(`/reviewer/discussion/${paperId}`)}
+                                    className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black hover:bg-slate-50"
+                                  >
+                                    Discussion
+                                  </button>
 
-                          {/* Double-blind: intentionally do NOT show authors */}
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-600 dark:text-slate-300">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="material-symbols-outlined"
-                                style={{ fontSize: 18 }}
-                              >
-                                category
-                              </span>
-                              <span className="font-semibold">{track}</span>
+                                  <button
+                                    disabled={!canReview}
+                                    onClick={() => navigate(`/reviewer/review/${assignmentId}`)}
+                                    className={
+                                      canReview
+                                        ? "px-3 py-2 rounded-lg bg-[#1976d2] text-white text-xs font-black hover:opacity-95"
+                                        : "px-3 py-2 rounded-lg bg-slate-100 text-slate-400 text-xs font-black cursor-not-allowed"
+                                    }
+                                  >
+                                    Review
+                                  </button>
+                                </>
+                              )}
                             </div>
-
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="material-symbols-outlined"
-                                style={{ fontSize: 18 }}
-                              >
-                                calendar_today
-                              </span>
-                              <span>
-                                Review deadline:{" "}
-                                <span className="font-bold">
-                                  {dueVN || "Chưa có"}
-                                </span>
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="material-symbols-outlined"
-                                style={{ fontSize: 18 }}
-                              >
-                                analytics
-                              </span>
-                              <span className="font-semibold">{sla}</span>
-                            </div>
-                          </div>
-
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Assignment ID: <span className="font-bold">#{assignmentId}</span>
-                          </div>
-                        </div>
-
-                        {/* Right Actions */}
-                        <div className="flex flex-col sm:flex-row lg:flex-col gap-3 lg:min-w-[260px] items-stretch">
-                          {canAcceptDecline ? (
-                            <>
-                              <button
-                                onClick={() => onAccept(assignmentId)}
-                                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-black shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-background-dark"
-                              >
-                                <span
-                                  className="material-symbols-outlined"
-                                  style={{ fontSize: 18 }}
-                                >
-                                  check
-                                </span>
-                                Chấp nhận
-                              </button>
-
-                              <button
-                                onClick={() => onDecline(assignmentId)}
-                                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent text-slate-700 dark:text-slate-200 text-sm font-black hover:bg-slate-50 dark:hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400"
-                              >
-                                <span
-                                  className="material-symbols-outlined"
-                                  style={{ fontSize: 18 }}
-                                >
-                                  close
-                                </span>
-                                Từ chối
-                              </button>
-
-                              <button
-                                onClick={() => onDeclareCOI(a)}
-                                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-700/50 bg-rose-50/60 dark:bg-rose-900/10 text-rose-700 dark:text-rose-200 text-sm font-black hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-                                title="Khai báo xung đột lợi ích (COI)"
-                              >
-                                <span
-                                  className="material-symbols-outlined"
-                                  style={{ fontSize: 18 }}
-                                >
-                                  report
-                                </span>
-                                Declare COI
-                              </button>
-                            </>
-                          ) : null}
-
-                          {canStartReview ? (
-                            <button
-                              onClick={() => openWorkspace(assignmentId)}
-                              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-black shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-background-dark"
-                            >
-                              <span
-                                className="material-symbols-outlined"
-                                style={{ fontSize: 18 }}
-                              >
-                                edit
-                              </span>
-                              Bắt đầu đánh giá
-                            </button>
-                          ) : null}
-
-                          {canViewReview ? (
-                            <button
-                              onClick={() => openWorkspace(assignmentId)}
-                              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-black shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-background-dark"
-                            >
-                              <span
-                                className="material-symbols-outlined"
-                                style={{ fontSize: 18 }}
-                              >
-                                visibility
-                              </span>
-                              Xem đánh giá
-                            </button>
-                          ) : null}
-
-                          {/* Discussion / Rebuttal entry (optional) */}
-                          {showDiscussion ? (
-                            <button
-                              onClick={() => openDiscussion(paperId)}
-                              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent text-slate-700 dark:text-slate-200 text-sm font-black hover:bg-slate-50 dark:hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400"
-                              title="Thảo luận / rebuttal (nếu hội nghị bật)"
-                            >
-                              <span
-                                className="material-symbols-outlined"
-                                style={{ fontSize: 18 }}
-                              >
-                                forum
-                              </span>
-                              Discussion / Rebuttal
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      {/* Helper note about double-blind */}
-                      <div className="mt-5 border-t border-slate-100 dark:border-slate-800 pt-4 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
-                        <span
-                          className="material-symbols-outlined"
-                          style={{ fontSize: 18 }}
-                        >
-                          visibility_off
-                        </span>
-                        <div>
-                          <div className="font-bold text-slate-600 dark:text-slate-300">
-                            Double-blind
-                          </div>
-                          <div>
-                            Không hiển thị danh tính tác giả trong giai đoạn phản biện (theo
-                            chính sách hội nghị).
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div className="mt-4 flex justify-between items-center pb-10 text-sm text-slate-500 dark:text-slate-400">
-                  <p>
-                    Hiển thị <span className="font-bold">{filtered.length}</span> mục trong tab{" "}
-                    <span className="font-bold">{STATUS_LABEL[active] || active}</span>
-                  </p>
-                  <button
-                    onClick={load}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 font-bold"
-                    title="Reload"
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                      refresh
-                    </span>
-                    Tải lại
-                  </button>
-                </div>
-              </>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
+
+            <div className="mt-4 text-xs text-slate-500 flex items-center justify-between">
+              <div>
+                Hiển thị <b>{filtered.length}</b> mục trong tab <b>{STATUS_LABEL[active] || active}</b>
+              </div>
+              <button
+                onClick={() => navigate("/reviewer/coi")}
+                className="text-[#1976d2] font-black hover:underline"
+              >
+                Đi tới Khai báo COI →
+              </button>
+            </div>
           </div>
         </div>
       </main>

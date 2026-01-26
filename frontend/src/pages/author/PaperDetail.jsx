@@ -538,10 +538,6 @@ export default function PaperDetail() {
               </tbody>
             </table>
           </div>
-
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-600">
-            <b>Lưu ý:</b> Backend hiện tại chỉ hỗ trợ <b>thêm</b> / <b>xóa</b> tác giả. Muốn sửa thông tin tác giả cần thêm endpoint update ở backend.
-          </div>
         </div>
 
         {/* Lịch sử phiên bản + upload revision */}

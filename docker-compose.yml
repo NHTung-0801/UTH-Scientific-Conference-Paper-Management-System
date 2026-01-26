@@ -19,12 +19,18 @@ services:
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - submission-service
-      - notification-service
-      - conference-service
-      - intelligent-service
-      - review-service
-      - identity-service
+      submission-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      conference-service:
+        condition: service_started
+      intelligent-service:
+        condition: service_started
+      review-service:
+        condition: service_started
+      identity-service:
+        condition: service_started
     networks:
       - confms-network
 
@@ -57,8 +63,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - submission-db
-      - identity-service
+      submission-db:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
     env_file:
       - ./.env
       - ./backend/submission-service/.env
@@ -69,7 +77,6 @@ services:
       CONFERENCE_SERVICE_URL: http://conference-service:8000
       INTELLIGENT_SERVICE_URL: http://intelligent-service:8000
       IDENTITY_SERVICE_URL: http://identity-service:8000
-
       <<: *jwt_common
     volumes:
       - ./backend/submission-service/uploads:/app/uploads
@@ -105,13 +112,13 @@ services:
     ports:
       - "8001:8000"
     depends_on:
-      - notification-db
+      notification-db:
+        condition: service_healthy
     env_file:
       - ./.env
       - ./backend/notification-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
-
       <<: *jwt_common
     networks:
       - confms-network
@@ -147,8 +154,10 @@ services:
     ports:
       - "8002:8000"
     depends_on:
-      - conference-db
-      - identity-service
+      conference-db:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
     env_file:
       - ./.env
       - ./backend/conference-service/.env
@@ -159,7 +168,6 @@ services:
       REVIEW_SERVICE_URL: http://review-service:8000
       INTELLIGENT_SERVICE_URL: http://intelligent-service:8000
       IDENTITY_SERVICE_URL: http://identity-service:8000
-
       <<: *jwt_common
     networks:
       - confms-network
@@ -193,14 +201,16 @@ services:
     ports:
       - "8004:8000"
     depends_on:
-      - intelligent-db
+      intelligent-db:
+        condition: service_healthy
     env_file:
       - ./.env
       - ./backend/intelligent-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@intelligent-db:3306/intelligent_db
-
       <<: *jwt_common
+    # [QUAN TRỌNG] Tắt chế độ reload để tránh lỗi tràn RAM (Errno 12)
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./backend/intelligent-service/src:/app/src
     networks:
@@ -235,10 +245,14 @@ services:
     ports:
       - "8003:8000"
     depends_on:
-      - review-db
-      - submission-service
-      - conference-service
-      - identity-service
+      review-db:
+        condition: service_healthy
+      submission-service:
+        condition: service_started
+      conference-service:
+        condition: service_started
+      identity-service:
+        condition: service_started
     env_file:
       - ./.env
       - ./backend/review-service/.env
@@ -249,7 +263,6 @@ services:
       CONFERENCE_SERVICE_URL: http://conference-service:8000
       INTELLIGENT_SERVICE_URL: http://intelligent-service:8000
       IDENTITY_SERVICE_URL: http://identity-service:8000
-
       <<: *jwt_common
     networks:
       - confms-network
@@ -281,7 +294,8 @@ services:
     container_name: identity_service
     restart: on-failure
     depends_on:
-      - identity-db
+      identity-db:
+        condition: service_healthy
     ports:
       - "8005:8000"
     environment:

@@ -63,7 +63,7 @@ class PaperVersionResponse(BaseModel):
 class PaperBase(BaseModel):
     title: str
     abstract: str
-    keywords: List[str] = []   
+    keywords: List[str] = []
     conference_id: int
     track_id: int
     is_blind_mode: bool = True
@@ -120,7 +120,7 @@ class PaperTopicInput(BaseModel):
 class PaperUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
-    keywords: Optional[List[str]] = None 
+    keywords: List[str] = []
 
     topics: Optional[List[PaperTopicInput]] = None
 

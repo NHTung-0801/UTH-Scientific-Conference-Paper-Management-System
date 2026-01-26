@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.deps import get_db
@@ -18,7 +20,18 @@ def create_discussion(
     db: Session = Depends(get_db),
     payload=Depends(get_current_payload),
 ):
-    sender_id = payload.get("user_id")
+    roles = set(payload.get("roles") or [])
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(401, "Token missing user_id")
+
+    # Reviewer chỉ được thảo luận paper mình được assign
+    if "REVIEWER" in roles and "ADMIN" not in roles and "CHAIR" not in roles:
+        ass = crud.list_assignments(db, reviewer_id=user_id, paper_id=data.paper_id)
+        if not ass:
+            raise HTTPException(403, "Not assigned to this paper")
+
+    sender_id = user_id
     return crud.create_discussion(db, data, sender_id=sender_id)
 
 
@@ -30,5 +43,17 @@ def create_discussion(
 def list_discussions(
     paper_id: int,
     db: Session = Depends(get_db),
+    payload=Depends(get_current_payload),
 ):
+    roles = set(payload.get("roles") or [])
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(401, "Token missing user_id")
+
+    # Reviewer chỉ xem discussion paper mình được assign
+    if "REVIEWER" in roles and "ADMIN" not in roles and "CHAIR" not in roles:
+        ass = crud.list_assignments(db, reviewer_id=user_id, paper_id=paper_id)
+        if not ass:
+            raise HTTPException(403, "Not assigned to this paper")
+
     return crud.list_discussions(db, paper_id)

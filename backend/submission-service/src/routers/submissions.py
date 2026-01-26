@@ -304,7 +304,6 @@ def update_paper_file(
         file_path = f"{base_dir}/{file.filename}"
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        paper = crud.check_paper_ownership(db, paper_id, submitter_id)
 
         return crud.upload_new_version(
             db=db,
@@ -312,7 +311,7 @@ def update_paper_file(
             submitter_id=submitter_id,
             file_path=file_path,
             version_number=next_ver,
-            is_blind_mode=paper.is_blind_mode
+            is_blind_mode=True
         )
 
     except exceptions.PaperNotFoundError as e:

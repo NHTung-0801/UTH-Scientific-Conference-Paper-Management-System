@@ -9,14 +9,15 @@ from src.conference.tracks.schemas import (
     TrackResponse
 )
 from src.conference.models import Conference
-from sqlalchemy.exc import IntegrityError
 from fastapi import UploadFile, File, Form
 import os
 import shutil
 from src.security.deps import require_roles
 
-router = APIRouter(tags=["Tracks"])
-
+router = APIRouter(
+    prefix="/tracks",
+    tags=["Tracks"]
+)
 
 # ========================
 # CREATE TRACK
@@ -130,18 +131,6 @@ def get_tracks(db: Session = Depends(get_db)):
 
 
 # ========================
-# GET TRACKS BY CONFERENCE
-# ========================
-@router.get("/conference/{conference_id}", response_model=list[TrackResponse])
-def get_tracks_by_conference(
-    conference_id: int,
-    db: Session = Depends(get_db)
-):
-    return db.query(Track).filter(
-        Track.conference_id == conference_id
-    ).all()
-
-# ========================
 # GET TRACK BY ID
 # ========================
 @router.get("/{track_id}", response_model=TrackResponse)
@@ -153,6 +142,19 @@ def get_track(track_id: int, db: Session = Depends(get_db)):
             detail="Track not found"
         )
     return track
+
+
+# ========================
+# GET TRACKS BY CONFERENCE
+# ========================
+@router.get("/conference/{conference_id}", response_model=list[TrackResponse])
+def get_tracks_by_conference(
+    conference_id: int,
+    db: Session = Depends(get_db)
+):
+    return db.query(Track).filter(
+        Track.conference_id == conference_id
+    ).all()
 
 
 # ========================

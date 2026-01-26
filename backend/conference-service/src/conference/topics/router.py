@@ -13,8 +13,10 @@ from src.security.deps import require_roles
 import os
 import shutil
 
-router = APIRouter(tags=["Topics"])
-
+router = APIRouter(
+    prefix="/topics",
+    tags=["Topics"]
+)
 
 # ========================
 # CREATE TOPIC
