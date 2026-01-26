@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import reviewApi from "../../api/reviewApi"; // Giả định bạn đã có API này
-import submissionApi from "../../api/submissionApi"; // API để lấy thông tin bài báo
+//import submissionApi from "../../api/submissionApi"; // API để lấy thông tin bài báo
 // Nếu chưa có api lấy AI analysis, bạn có thể gọi trực tiếp hoặc tích hợp vào submissionApi
 
 const ReviewWorkspace = () => {
