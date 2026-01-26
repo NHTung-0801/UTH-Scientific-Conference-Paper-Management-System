@@ -34,11 +34,6 @@ export default function ReviewWorkspace() {
   const [contentAuthor, setContentAuthor] = useState("");
   const [contentPc, setContentPc] = useState("");
 
-  const existingCriteriaNames = useMemo(() => {
-    const arr = review?.criterias ?? [];
-    return new Set(arr.map((c) => c.criteria_name));
-  }, [review]);
-
   const calcFinalScore = useMemo(() => {
     const vals = Object.values(scores);
     const sum = vals.reduce((a, b) => a + b, 0);

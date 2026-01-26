@@ -108,6 +108,11 @@ class AuthorResponse(AuthorAdd):
     class Config:
         from_attributes = True
 
+class AuthorUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    organization: Optional[str] = None
+    is_corresponding: Optional[bool] = None
 
 class PaperTopicInput(BaseModel):
     topic_id: int

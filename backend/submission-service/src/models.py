@@ -12,7 +12,7 @@ class PaperStatus(str, enum.Enum):
     ACCEPTED = "ACCEPTED"           # Được chấp nhận
     REJECTED = "REJECTED"           # Bị từ chối
     REVISION_REQUIRED = "REVISION_REQUIRED" # Cần sửa chữa 
-    WITHDRAWN = "WITHDRAWN"
+    WITHDRAWN = "WITHDRAWN" # rút bài
 
 # 2. Bảng chính: Bài báo (Papers)
 class Paper(Base):

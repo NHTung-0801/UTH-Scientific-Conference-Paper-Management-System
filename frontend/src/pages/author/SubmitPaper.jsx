@@ -118,6 +118,26 @@ export default function SubmitPaper() {
     })();
   }, [trackId]);
 
+  useEffect(() => {
+  try {
+    const raw = localStorage.getItem("author_submit_draft");
+    if (!raw) return;
+
+    const d = JSON.parse(raw);
+
+    setStep(d.step || 1);
+    setConferenceId(d.conferenceId || "");
+    setTrackId(d.trackId || "");
+    setTitle(d.title || "");
+    setAbstract(d.abstract || "");
+    setBlindMode(!!d.blindMode);
+    setKeywords(Array.isArray(d.keywords) ? d.keywords : []);
+    setAuthors(Array.isArray(d.authors) && d.authors.length ? d.authors : [{ full_name: "", email: "", organization: "", is_corresponding: true }]);
+    setTopics(Array.isArray(d.topics) ? d.topics : []);
+  } catch {
+  }
+}, []);
+
 
   const progressPct = useMemo(() => (step - 1) / 3, [step]);
 
@@ -183,13 +203,6 @@ export default function SubmitPaper() {
     const mb = f.size / (1024 * 1024);
     if (mb > MAX_MB) return setError(`File vượt quá ${MAX_MB}MB.`);
     setFile(f);
-  };
-
-  const toggleTopic = (id) => {
-    const key = String(id);
-    setTopics((prev) =>
-      prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
-    );
   };
 
   const submit = async () => {
@@ -646,19 +659,11 @@ export default function SubmitPaper() {
       <div className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center justify-between px-6 lg:px-24 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button
           onClick={() => {
-            const draft = {
-              step,
-              conferenceId,
-              trackId,
-              title,
-              abstract,
-              blindMode,
-              keywords,
-              authors,
-              topics,
-            };
+            const draft = { step, conferenceId, trackId, title, abstract, blindMode, keywords, authors, topics };
             localStorage.setItem("author_submit_draft", JSON.stringify(draft));
+            alert("Đã lưu bản nháp!");
           }}
+
           className="px-6 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-50"
         >
           💾 Lưu bản nháp

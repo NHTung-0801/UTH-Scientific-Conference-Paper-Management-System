@@ -1,15 +1,80 @@
 import React, { useMemo } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, matchPath } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ROLES } from "../../utils/constants";
+// --- STYLE ---
+const linkBase =
+  "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors cursor-pointer";
+const linkInactive =
+  "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900";
+const linkActive =
+  "bg-rose-50 text-rose-700 border border-rose-100 font-bold shadow-sm";
 
-// --- CẤU HÌNH STYLE ---
-const linkBase = "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors cursor-pointer";
-const linkInactive = "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900";
-// ✅ Style Active chủ đạo màu ĐỎ (Rose)
-const linkActive = "bg-rose-50 text-rose-700 border border-rose-100 font-bold shadow-sm"; 
+function RoleHeader({ icon, title }) {
+  return (
+    <div className="flex items-center gap-3 px-2 pt-2">
+      <div className="size-8 bg-rose-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-rose-200">
+        <span className="material-symbols-outlined text-xl">{icon}</span>
+      </div>
+      <span className="text-lg font-black text-gray-900">{title}</span>
+    </div>
+  );
+}
 
-const Sidebar = () => {
+function SidebarShell({ children, showOnLgOnly = true }) {
+  return (
+    <aside
+      className={[
+        "w-72 bg-white border-r border-slate-200 hidden lg:flex flex-col sticky top-14 h-[calc(100vh-56px)] overflow-y-auto",
+        showOnLgOnly ? "hidden lg:flex" : "flex",
+      ].join(" ")}
+    >
+      <div className="p-4 flex flex-col gap-6 h-full">{children}</div>
+    </aside>
+  );
+}
+
+
+function MenuNav({ items }) {
+  const location = useLocation();
+
+  const isItemActive = (item) => {
+    const end = !!item.exact;
+    return !!matchPath({ path: item.to, end }, location.pathname);
+  };
+
+  return (
+    <nav className="flex flex-col gap-1 flex-1 overflow-y-auto custom-scrollbar">
+      {items.map((item) => {
+        const active = isItemActive(item);
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={`${linkBase} ${active ? linkActive : linkInactive}`}
+          >
+            <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+            <span>{item.label}</span>
+          </NavLink>
+        );
+      })}
+    </nav>
+  );
+}
+
+function LogoutButton({ onLogout }) {
+  return (
+    <button
+      onClick={onLogout}
+      className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-rose-600 hover:bg-rose-50 font-bold transition-colors"
+    >
+      <span className="material-symbols-outlined">logout</span>
+      <span>Đăng xuất</span>
+    </button>
+  );
+}
+
+export default function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
 
@@ -21,180 +86,87 @@ const Sidebar = () => {
 
   const hasRole = (role) => roles.includes(role);
 
-  // Helper để render Initials Avatar
-  const getInitials = (name) => (name || "U").charAt(0).toUpperCase();
-
-  // Xác định khu vực hiện tại
   const isAuthorArea = location.pathname.startsWith("/author");
+  const isChairArea = location.pathname.startsWith("/chair");
   const isAdminArea = location.pathname.startsWith("/admin");
 
   // =========================
-  // 1) SIDEBAR CHO AUTHOR (GIỮ NGUYÊN)
+  // AUTHOR
   // =========================
   if (hasRole(ROLES.AUTHOR) && isAuthorArea) {
     const authorMenu = [
-      { to: "/author", label: "Tổng quan", icon: "home" },
-      { to: "/author/submissions", label: "Bài báo của tôi", icon: "article" },
-      { to: "/author/submissions/new", label: "Nộp bài mới", icon: "cloud_upload" },
-      { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person" },
-      { to: "/author/settings", label: "Cài đặt", icon: "settings" },
+      { to: "/author", label: "Tổng quan", icon: "home", exact: true },
+      { to: "/author/submissions", label: "Bài báo của tôi", icon: "article", exact: true }, 
+      { to: "/author/submissions/new", label: "Nộp bài mới", icon: "cloud_upload", exact: true },
+      { to: "/author/notifications", label: "Thông báo", icon: "notifications", exact: true }, 
+      { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person", exact: true },
+      { to: "/author/settings", label: "Cài đặt", icon: "settings", exact: true },
     ];
 
     return (
-      <aside className="w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 h-screen hidden lg:flex flex-col sticky top-0 z-20">
-        <div className="p-4 flex flex-col gap-6 h-full">
-          {/* Logo Author */}
-          <div className="flex items-center gap-3 px-2 pt-2">
-             <div className="size-8 bg-rose-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-rose-200">
-                <span className="material-symbols-outlined text-xl">school</span>
-             </div>
-             <span className="text-lg font-black text-gray-900">Author Portal</span>
-          </div>
+      <SidebarShell>
+        <RoleHeader icon="school" title="Author Portal" />
+        <MenuNav items={authorMenu} />
 
-          {/* Profile Box */}
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-            <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center font-black text-rose-700 border border-rose-200">
-              {getInitials(user?.full_name || user?.email)}
-            </div>
-            <div className="flex flex-col overflow-hidden">
-              <h1 className="text-gray-900 text-sm font-bold truncate">
-                {user?.full_name || "Tác giả"}
-              </h1>
-              <p className="text-gray-500 text-xs font-medium truncate">{user?.email}</p>
-            </div>
-          </div>
-
-          {/* Links Author */}
-          <nav className="flex flex-col gap-1 flex-1 overflow-y-auto custom-scrollbar">
-            {authorMenu.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/author"}
-                className={({ isActive }) =>
-                  `${linkBase} ${isActive ? linkActive : linkInactive}`
-                }
-              >
-                <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                <span className="">{item.label}</span>
-              </NavLink>
-            ))}
-            
-            <div className="my-2 border-t border-gray-100 mx-2"></div>
-            <NavLink to="/" className={linkInactive + " flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium"}>
-               <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-               <span>Về trang chính</span>
-            </NavLink>
-          </nav>
-
-          {/* Support & Logout */}
-          <div className="mt-auto">
-            <div className="p-4 bg-rose-50 rounded-xl border border-rose-100 mb-4">
-              <div className="text-rose-700 text-xs font-bold mb-1 flex items-center gap-1">
-                <span className="material-symbols-outlined text-sm">support_agent</span>
-                Hỗ trợ kỹ thuật
-              </div>
-              <div className="text-gray-600 text-xs leading-relaxed">
-                LH: support@uth.edu.vn
-              </div>
-            </div>
-
-            <button
-              onClick={logout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-rose-600 hover:bg-rose-50 font-bold transition-colors"
-            >
-              <span className="material-symbols-outlined">logout</span>
-              <span>Đăng xuất</span>
-            </button>
-          </div>
+        <div className="mt-auto">
+          <LogoutButton onLogout={logout} />
         </div>
-      </aside>
+      </SidebarShell>
     );
   }
 
   // =========================
-  // 2) SIDEBAR CHO ADMIN (✅ ĐÃ SỬA LẠI MÀU ĐỎ)
+  // CHAIR
+  // =========================
+  if (hasRole(ROLES.CHAIR) && isChairArea) {
+    const chairMenu = [
+      { to: "/chair", label: "Tổng quan", icon: "space_dashboard", end: true },
+      { to: "/chair/papers", label: "Bài nộp", icon: "article" },
+      { to: "/chair/review-assign", label: "Phân công phản biện", icon: "assignment_ind" },
+      { to: "/chair/settings", label: "Cài đặt", icon: "settings" },
+    ];
+
+    return (
+      <SidebarShell>
+        <RoleHeader icon="gavel" title="Chair Portal" />
+        <MenuNav items={chairMenu} />
+
+        <div className="mt-auto">
+          <LogoutButton onLogout={logout} />
+        </div>
+      </SidebarShell>
+    );
+  }
+
+  // =========================
+  // ADMIN  
   // =========================
   if (hasRole(ROLES.ADMIN) && isAdminArea) {
     const adminMenu = [
-        { to: "/admin/dashboard", label: "Tổng quan hệ thống", icon: "grid_view" },
-        { to: "/admin/conferences", label: "Quản lý Hội nghị", icon: "calendar_month" },
-        { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" },
-        { to: "/admin/settings", label: "Cấu hình hệ thống", icon: "settings" },
-        { to: "/admin/audit", label: "Nhật ký hoạt động", icon: "history" },
+      { to: "/admin/dashboard", label: "Tổng quan hệ thống", icon: "grid_view" },
+      { to: "/admin/conferences", label: "Quản lý Hội nghị", icon: "calendar_month" },
+      { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" },
+      { to: "/admin/settings", label: "Cấu hình hệ thống", icon: "settings" },
+      { to: "/admin/audit", label: "Nhật ký hoạt động", icon: "history" },
     ];
 
     return (
-      <aside className="w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 h-screen hidden lg:flex flex-col sticky top-0 z-20">
-        <div className="p-4 flex flex-col gap-6 h-full">
-          
-          {/* Logo Admin Area (Đã đổi sang màu đỏ - rose) */}
-          <div className="flex items-center gap-3 px-2 pt-2">
-             <div className="size-8 bg-rose-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-rose-200">
-                <span className="material-symbols-outlined text-xl">admin_panel_settings</span>
-             </div>
-             <div>
-                <h1 className="text-lg font-black text-gray-900 leading-none">UTH-ConfMS</h1>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pt-1">Administrator</p>
-             </div>
-          </div>
+      <SidebarShell>
+        <RoleHeader icon="admin_panel_settings" title="Admin Portal" />
+        <MenuNav items={adminMenu} />
 
-          {/* Profile Box Admin (Đã đổi sang màu đỏ - rose) */}
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-            <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center font-black text-rose-700 border border-rose-200">
-              {getInitials(user?.full_name || "Admin")}
-            </div>
-            <div className="flex flex-col overflow-hidden">
-              <h1 className="text-gray-900 text-sm font-bold truncate">
-                {user?.full_name || "Admin"}
-              </h1>
-              <p className="text-gray-500 text-xs font-medium truncate">Quản trị viên</p>
-            </div>
-          </div>
-
-          {/* Links Admin */}
-          <nav className="flex flex-col gap-1 flex-1 overflow-y-auto custom-scrollbar">
-            {adminMenu.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                // ✅ Sử dụng lại linkActive mặc định (màu đỏ)
-                className={({ isActive }) => 
-                    `${linkBase} ${isActive ? linkActive : linkInactive}`
-                }
-              >
-                <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                <span className="">{item.label}</span>
-              </NavLink>
-            ))}
-            
-            <div className="my-2 border-t border-gray-100 mx-2"></div>
-            <NavLink to="/" className={linkInactive + " flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium"}>
-               <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-               <span>Về trang chính</span>
-            </NavLink>
-          </nav>
-
-          {/* Logout */}
-          <div className="mt-auto">
-            <button
-              onClick={logout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-rose-600 hover:bg-rose-50 font-bold transition-colors"
-            >
-              <span className="material-symbols-outlined">logout</span>
-              <span>Đăng xuất</span>
-            </button>
-          </div>
+        <div className="mt-auto">
+          <LogoutButton onLogout={logout} />
         </div>
-      </aside>
+      </SidebarShell>
     );
   }
 
   // =========================
-  // 3) SIDEBAR CHUNG (GIỮ NGUYÊN)
+  // COMMON (fallback)
   // =========================
   const menu = [
-    { to: "/", label: "Trang chủ", icon: "home" },
+    { to: "/", label: "Trang chủ", icon: "home", end: true },
 
     ...(hasRole(ROLES.AUTHOR)
       ? [
@@ -203,7 +175,6 @@ const Sidebar = () => {
           { to: "/author/submissions/new", label: "Nộp bài mới", icon: "cloud_upload" },
           { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person" },
           { to: "/author/settings", label: "Cài đặt", icon: "settings" },
-          
         ]
       : []),
 
@@ -217,59 +188,25 @@ const Sidebar = () => {
   ];
 
   return (
-    <aside className="w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 h-screen flex flex-col sticky top-0 z-20">
-      
-      {/* Header Logo */}
-      <div className="p-6 flex items-center gap-3">
+    <SidebarShell>
+      {/* giữ logo chung như cũ */}
+      <div className="p-2 flex items-center gap-3">
         <div className="size-10 bg-rose-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-rose-200">
           <span className="material-symbols-outlined text-2xl">account_balance</span>
         </div>
         <div>
           <h2 className="text-xl font-black tracking-tight text-gray-900">UTH-ConfMS</h2>
-          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Hệ thống chung</p>
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+            Hệ thống chung
+          </p>
         </div>
       </div>
 
-      {/* User Info */}
-      <div className="px-6 pb-4">
-        <div className="text-xs text-gray-500 font-medium">Xin chào,</div>
-        <div className="font-bold text-gray-900 truncate text-base">
-          {user?.full_name || user?.sub || "User"}
-        </div>
-        <div className="text-xs text-rose-600 mt-1 font-bold bg-rose-50 inline-block px-2 py-0.5 rounded">
-          {roles[0] || "GUEST"}
-        </div>
-      </div>
+      <MenuNav items={menu} />
 
-      {/* Menu Nav */}
-      <nav className="flex-1 px-4 py-2 flex flex-col gap-1 overflow-y-auto custom-scrollbar">
-        {menu.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkInactive}`
-            }
-            end={item.to === "/"}
-          >
-            <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* Logout Footer */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
-        <button
-          onClick={logout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-rose-600 hover:bg-rose-50 font-bold transition-colors"
-        >
-          <span className="material-symbols-outlined">logout</span>
-          <span>Đăng xuất</span>
-        </button>
+      <div className="mt-auto">
+        <LogoutButton onLogout={logout} />
       </div>
-    </aside>
+    </SidebarShell>
   );
-};
-
-export default Sidebar;
+}
