@@ -6,33 +6,16 @@ import { ROLES } from "../../utils/constants";
 
 const ROLE_ORDER = [ROLES.AUTHOR, ROLES.REVIEWER, ROLES.CHAIR, ROLES.ADMIN];
 
-const roleLabel = (r) => {
-  const x = (r || "").toUpperCase();
-  switch (x) {
-    case ROLES.ADMIN:
-      return "ADMIN (Quản trị)";
-    case ROLES.CHAIR:
-      return "CHAIR (Trưởng ban)";
-    case ROLES.REVIEWER:
-      return "REVIEWER (Phản biện)";
-    case ROLES.AUTHOR:
-    default:
-      return "AUTHOR (Tác giả)";
-  }
-};
+// --- HELPERS ---
+const getInitials = (name) => (name || "U").substring(0, 2).toUpperCase();
 
 const badgeClass = (roleName) => {
   switch ((roleName || "").toUpperCase()) {
-    case ROLES.ADMIN:
-      return "bg-primary/10 text-primary ring-primary/20";
-    case ROLES.CHAIR:
-      return "bg-blue-500/10 text-blue-700 dark:text-blue-300 ring-blue-500/20";
-    case ROLES.REVIEWER:
-      return "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/20";
-    case ROLES.AUTHOR:
-      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-emerald-500/20";
-    default:
-      return "bg-slate-500/10 text-slate-700 dark:text-slate-300 ring-slate-500/20";
+    case ROLES.ADMIN: return "bg-indigo-100 text-indigo-700 border border-indigo-200";
+    case ROLES.CHAIR: return "bg-purple-100 text-purple-700 border border-purple-200";
+    case ROLES.REVIEWER: return "bg-amber-100 text-amber-700 border border-amber-200";
+    case ROLES.AUTHOR: return "bg-emerald-100 text-emerald-700 border border-emerald-200";
+    default: return "bg-gray-100 text-gray-600 border border-gray-200";
   }
 };
 
@@ -43,46 +26,41 @@ const normalizeUsers = (raw) => {
 };
 
 export default function AdminDashboard() {
-  const { user, logout } = useAuth();
-
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ✅ FIX: thêm "/" cuối để tránh 307 redirect loop qua gateway
-  const USERS_API = useMemo(() => "/identity/api/users/", []);
+  // --- STATE MODAL & FORM ---
+  const [showModal, setShowModal] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false); // True = Sửa, False = Thêm mới
+  const [editingUserId, setEditingUserId] = useState(null);
 
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "", 
+    full_name: "",
+    role: ROLES.AUTHOR 
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  // API Endpoints
+  const USERS_API = useMemo(() => "/identity/api/users/", []);
+  const CREATE_USER_API = "/identity/api/users/registration"; 
+
+  // --- TẢI DANH SÁCH USER ---
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError("");
-
     try {
-      console.log("📡 Fetch users ->", USERS_API);
       const res = await axiosClient.get(USERS_API);
-
-      const data = res?.data ?? res; // phòng interceptor trả thẳng data
-      const list = normalizeUsers(data);
-
-      console.log("✅ Users response:", data);
-      setUsers(list);
+      const data = res?.data ?? res;
+      setUsers(normalizeUsers(data));
     } catch (err) {
       const status = err?.response?.status;
-      const detail = err?.response?.data?.detail;
-
-      console.error("❌ fetchUsers error:", status, err?.response?.data || err);
-
-      if (status === 401) {
-        setError("⛔ Token không hợp lệ hoặc đã hết hạn (401). Vui lòng đăng nhập lại.");
-      } else if (status === 403) {
-        setError("⛔ Bạn không có quyền ADMIN để xem danh sách user (403).");
-      } else if (status === 307) {
-        setError("⚠️ Backend đang redirect 307 (lỗi slash). Hãy gọi /identity/api/users/ (có / cuối).");
-      } else if (status) {
-        setError(`❌ Lỗi server (${status})${detail ? `: ${detail}` : ""}`);
-      } else {
-        setError("❌ Không thể kết nối đến server. Kiểm tra gateway (8080) và identity-service.");
-      }
-
+      if (status === 401) setError("⛔ Token hết hạn. Đăng nhập lại.");
+      else if (status === 403) setError("⛔ Không có quyền ADMIN.");
+      else setError("❌ Lỗi tải danh sách user.");
       setUsers([]);
     } finally {
       setLoading(false);
@@ -93,218 +71,295 @@ export default function AdminDashboard() {
     fetchUsers();
   }, [fetchUsers]);
 
-  const handleChangeRole = async (userId, newRole) => {
-    const role = (newRole || "").toUpperCase();
-    if (!role) return;
+  // --- MỞ MODAL THÊM MỚI ---
+  const openAddModal = () => {
+    setIsEditMode(false);
+    setEditingUserId(null);
+    setFormData({ email: "", password: "", full_name: "", role: ROLES.AUTHOR });
+    setShowModal(true);
+  };
 
-    if (!window.confirm(`Bạn có chắc muốn đổi quyền user này thành ${role}?`)) return;
+  // --- MỞ MODAL SỬA ---
+  const openEditModal = (targetUser) => {
+    setIsEditMode(true);
+    setEditingUserId(targetUser.id);
+    
+    // Lấy role hiện tại
+    const currentRole = targetUser.roles?.[0]?.role_name || ROLES.AUTHOR;
+    
+    setFormData({
+      email: targetUser.email,
+      password: "", // Để trống, nếu nhập mới tính là đổi pass
+      full_name: targetUser.full_name,
+      role: currentRole.toUpperCase()
+    });
+    setShowModal(true);
+  };
 
+  // --- XỬ LÝ SUBMIT FORM (CREATE / UPDATE) ---
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.email || !formData.full_name) {
+      toast.warning("Vui lòng điền tên và email!");
+      return;
+    }
+    // Khi tạo mới bắt buộc có password
+    if (!isEditMode && !formData.password) {
+      toast.warning("Vui lòng nhập mật khẩu cho tài khoản mới!");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await axiosClient.put(`${USERS_API}${userId}/role`, { role_name: role });
-      toast.success(`✅ Đã cập nhật quyền thành: ${role}`);
+      if (isEditMode) {
+        // --- LOGIC SỬA (UPDATE) ---
+        // 1. Update thông tin cơ bản (Tên, Email)
+        await axiosClient.put(`${USERS_API}${editingUserId}`, {
+           full_name: formData.full_name,
+           email: formData.email
+        });
+
+        // 2. Update Role (Gọi API riêng)
+        await axiosClient.put(`${USERS_API}${editingUserId}/role`, { 
+            role_name: formData.role 
+        });
+
+        toast.success("✅ Cập nhật thành công!");
+      } else {
+        // --- LOGIC THÊM MỚI (CREATE) ---
+        await axiosClient.post(CREATE_USER_API, {
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.full_name,
+          role: formData.role
+        });
+        toast.success("🎉 Tạo tài khoản thành công!");
+      }
+
+      // Đóng modal và tải lại danh sách
+      setShowModal(false);
       fetchUsers();
+
     } catch (err) {
-      console.error("❌ update role error:", err?.response?.status, err?.response?.data || err);
-      const msg = err?.response?.data?.detail || "Lỗi cập nhật quyền!";
+      console.error(err);
+      const msg = err?.response?.data?.detail || "Đã có lỗi xảy ra.";
       toast.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const adminName = user?.full_name || user?.sub || user?.email || "---";
+  // --- XỬ LÝ XÓA USER ---
+  const handleDelete = async (userId) => {
+    if (!window.confirm("⚠️ Bạn có chắc chắn muốn xóa vĩnh viễn người dùng này?")) return;
+    
+    try {
+      await axiosClient.delete(`${USERS_API}${userId}`);
+      toast.success("🗑️ Đã xóa người dùng.");
+      fetchUsers(); // Refresh lại list
+    } catch (err) {
+      console.error(err);
+      toast.error("Lỗi khi xóa người dùng.");
+    }
+  };
 
   return (
-    <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-200">
-      <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-40 py-8">
-        <div className="max-w-6xl mx-auto flex flex-col gap-6">
-          {/* Breadcrumb */}
-          <nav aria-label="Breadcrumb" className="flex">
-            <ol className="inline-flex items-center space-x-1 md:space-x-3">
-              <li className="inline-flex items-center">
-                <span className="inline-flex items-center text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Bảng điều khiển
-                </span>
-              </li>
-              <li>
-                <div className="flex items-center">
-                  <span className="material-symbols-outlined text-slate-400 mx-1" style={{ fontSize: 16 }}>
-                    chevron_right
-                  </span>
-                  <span className="text-sm font-medium text-slate-900 dark:text-white">Quản trị hệ thống</span>
-                </div>
-              </li>
-            </ol>
-          </nav>
-
-          {/* Heading */}
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
-                Quản trị hệ thống
-              </h1>
-              <p className="text-slate-500 dark:text-slate-400">
-                Xin chào Admin: <span className="font-bold text-slate-900 dark:text-white">{adminName}</span>
-              </p>
+    // Thay đổi container chính: Bỏ header cũ, set h-full để khớp với Layout
+    <div className="h-full overflow-y-auto bg-gray-50/50 dark:bg-gray-900 p-8">
+      <div className="max-w-7xl mx-auto w-full space-y-8">
+        
+        {/* Tiêu đề & Nút Refresh */}
+        <div className="flex justify-between items-end">
+            <div>
+                <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Quản lý Người dùng</h1>
+                <p className="text-gray-500 mt-1">Danh sách tài khoản và phân quyền hệ thống.</p>
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={fetchUsers}
-                disabled={loading}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-dark text-slate-700 dark:text-slate-100 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-60"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                  refresh
-                </span>
-                {loading ? "Đang tải..." : "Reload"}
-              </button>
-
-              <button
-                onClick={logout}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-rose-700 transition-colors"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                  logout
-                </span>
-                Đăng xuất
-              </button>
-            </div>
-          </div>
-
-          {/* Error */}
-          {error ? (
-            <div className="bg-white dark:bg-surface-dark rounded-lg shadow-sm border border-rose-200/70 dark:border-rose-900/40 p-5">
-              <div className="flex items-start gap-2">
-                <span className="material-symbols-outlined text-primary" style={{ fontSize: 20 }}>
-                  error
-                </span>
-                <p className="text-sm font-semibold text-rose-600 dark:text-rose-400">{error}</p>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Card */}
-          <div className="bg-white dark:bg-surface-dark rounded-lg shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
-            <div className="px-5 md:px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary" style={{ fontSize: 20 }}>
-                  group
-                </span>
-                <h2 className="text-base md:text-lg font-black text-slate-900 dark:text-white">
-                  Danh sách người dùng
-                </h2>
-              </div>
-
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Tổng: {users.length}
-              </span>
-            </div>
-
-            {/* Table */}
-            <div className="w-full overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300">
-                  <tr>
-                    <th className="text-left font-bold px-5 py-3 whitespace-nowrap">ID</th>
-                    <th className="text-left font-bold px-5 py-3 whitespace-nowrap">Email / Username</th>
-                    <th className="text-left font-bold px-5 py-3 whitespace-nowrap">Tên hiển thị</th>
-                    <th className="text-left font-bold px-5 py-3 whitespace-nowrap">Vai trò</th>
-                    <th className="text-left font-bold px-5 py-3 whitespace-nowrap">Thay đổi quyền</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} className="px-5 py-10 text-center">
-                        <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                          <span className="material-symbols-outlined animate-spin" style={{ fontSize: 18 }}>
-                            progress_activity
-                          </span>
-                          Đang tải dữ liệu từ server...
-                        </div>
-                      </td>
-                    </tr>
-                  ) : users.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-5 py-10 text-center text-slate-500 dark:text-slate-400">
-                        Không có dữ liệu user (hoặc bạn chưa có quyền / API lỗi).
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((u) => {
-                      const currentRole = (u?.roles?.[0]?.role_name || "").toUpperCase();
-                      const safeRole = ROLE_ORDER.includes(currentRole) ? currentRole : ROLES.AUTHOR;
-
-                      const isProtected =
-                        (u?.email || "").toLowerCase() === "admin@uth.edu.vn" ||
-                        u?.id === user?.user_id ||
-                        u?.id === user?.id;
-
-                      return (
-                        <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-white/5 transition-colors">
-                          <td className="px-5 py-4 whitespace-nowrap">
-                            <span className="text-slate-500 dark:text-slate-400 font-bold">#{u.id}</span>
-                          </td>
-
-                          <td className="px-5 py-4 whitespace-nowrap">
-                            <div className="font-semibold text-slate-900 dark:text-white">{u.email}</div>
-                          </td>
-
-                          <td className="px-5 py-4 whitespace-nowrap">
-                            <div className="text-slate-700 dark:text-slate-200">{u.full_name || "---"}</div>
-                          </td>
-
-                          <td className="px-5 py-4 whitespace-nowrap">
-                            <span
-                              className={[
-                                "inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset",
-                                badgeClass(safeRole),
-                              ].join(" ")}
-                            >
-                              {safeRole}
-                            </span>
-                          </td>
-
-                          <td className="px-5 py-4 whitespace-nowrap">
-                            <select
-                              value={safeRole}
-                              disabled={isProtected}
-                              onChange={(e) => handleChangeRole(u.id, e.target.value)}
-                              className={[
-                                "w-[220px] rounded-lg border px-3 py-2 text-sm font-bold",
-                                "bg-white dark:bg-transparent",
-                                "border-slate-200 dark:border-slate-700",
-                                "text-slate-800 dark:text-slate-100",
-                                "focus:outline-none focus:ring-2 focus:ring-primary/60",
-                                isProtected ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
-                              ].join(" ")}
-                            >
-                              <option value={ROLES.AUTHOR}>{roleLabel(ROLES.AUTHOR)}</option>
-                              <option value={ROLES.REVIEWER}>{roleLabel(ROLES.REVIEWER)}</option>
-                              <option value={ROLES.CHAIR}>{roleLabel(ROLES.CHAIR)}</option>
-                              <option value={ROLES.ADMIN}>{roleLabel(ROLES.ADMIN)}</option>
-                            </select>
-
-                            {isProtected ? (
-                              <div className="mt-1 text-xs text-slate-400">
-                                Tài khoản này được bảo vệ (không đổi quyền).
-                              </div>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="pb-8 text-center text-xs text-slate-400 dark:text-slate-500">
-            Tip: nếu gặp 307 thì kiểm tra endpoint có dấu “/” cuối: <span className="font-semibold">/identity/api/users/</span>
-          </div>
+            <button onClick={fetchUsers} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold hover:bg-gray-50 shadow-sm transition-colors">
+                <span className={`material-symbols-outlined ${loading ? "animate-spin" : ""}`}>refresh</span>
+                {loading ? "Đang tải..." : "Làm mới"}
+            </button>
         </div>
-      </main>
+
+        {error && <div className="p-4 bg-rose-50 text-rose-700 rounded-lg border border-rose-200 font-bold flex gap-2"><span className="material-symbols-outlined">error</span> {error}</div>}
+
+        {/* --- USER TABLE CARD --- */}
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+            {/* Header Table */}
+            <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50">
+                <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
+                        <span className="material-symbols-outlined text-rose-600">group</span>
+                        Danh sách người dùng
+                    </h3>
+                    <span className="text-xs font-bold bg-gray-200 text-gray-600 px-2 py-1 rounded">Total: {users.length}</span>
+                </div>
+
+                {/* NÚT THÊM MỚI (Căn phải) */}
+                <button 
+                    onClick={openAddModal}
+                    className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all hover:shadow-md active:scale-95"
+                >
+                    <span className="material-symbols-outlined text-[20px]">add</span>
+                    Thêm tài khoản
+                </button>
+            </div>
+            
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-100 dark:bg-gray-800 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                        <tr>
+                            <th className="px-6 py-4 w-[10%]">ID</th>
+                            <th className="px-6 py-4 w-[35%]">Người dùng</th>
+                            <th className="px-6 py-4 w-[20%]">Vai trò hiện tại</th>
+                            <th className="px-6 py-4 w-[35%] text-right">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {users.map((u) => {
+                            const currentRole = (u?.roles?.[0]?.role_name || "").toUpperCase();
+                            const safeRole = ROLE_ORDER.includes(currentRole) ? currentRole : ROLES.AUTHOR;
+                            // Chặn không cho sửa/xóa chính mình hoặc Admin gốc
+                            const isProtected = (u?.email || "").toLowerCase() === "admin@uth.edu.vn" || u?.id === user?.id;
+
+                            return (
+                                <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 font-mono text-gray-400">#{u.id}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="size-9 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">{getInitials(u.full_name)}</div>
+                                            <div>
+                                                <div className="font-bold text-gray-900">{u.full_name}</div>
+                                                <div className="text-xs text-gray-500">{u.email}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${badgeClass(safeRole)}`}>
+                                            {safeRole}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex justify-end gap-2">
+                                            {/* NÚT SỬA */}
+                                            <button 
+                                                disabled={isProtected}
+                                                onClick={() => openEditModal(u)}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                title="Sửa thông tin"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">edit</span>
+                                                Sửa
+                                            </button>
+                                            
+                                            {/* NÚT XÓA */}
+                                            <button 
+                                                disabled={isProtected}
+                                                onClick={() => handleDelete(u.id)}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-white text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-md text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                title="Xóa người dùng"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                                Xóa
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+
+      {/* --- MODAL (DÙNG CHUNG CHO ADD VÀ EDIT) --- */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-gray-200">
+                <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-lg text-gray-800 dark:text-white">
+                        {isEditMode ? "Cập nhật thông tin" : "Thêm người dùng mới"}
+                    </h3>
+                    <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-rose-600 transition-colors">
+                        <span className="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Họ và tên</label>
+                        <input 
+                            type="text" 
+                            required
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all font-medium"
+                            placeholder="Nhập tên hiển thị"
+                            value={formData.full_name}
+                            onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+                        <input 
+                            type="email" 
+                            required
+                            // Có thể disable email khi sửa nếu muốn
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all font-medium"
+                            placeholder="email@example.com"
+                            value={formData.email}
+                            onChange={(e) => setFormData({...formData, email: e.target.value})}
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                            {isEditMode ? "Mật khẩu mới (Để trống nếu không đổi)" : "Mật khẩu"}
+                        </label>
+                        <input 
+                            type="password" 
+                            required={!isEditMode} // Bắt buộc khi tạo mới
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all font-medium"
+                            placeholder="••••••••"
+                            value={formData.password}
+                            onChange={(e) => setFormData({...formData, password: e.target.value})}
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vai trò</label>
+                        <select 
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none font-bold text-gray-700"
+                            value={formData.role}
+                            onChange={(e) => setFormData({...formData, role: e.target.value})}
+                        >
+                            <option value={ROLES.AUTHOR}>AUTHOR (Tác giả)</option>
+                            <option value={ROLES.REVIEWER}>REVIEWER (Phản biện)</option>
+                            <option value={ROLES.CHAIR}>CHAIR (Trưởng ban)</option>
+                            <option value={ROLES.ADMIN}>ADMIN (Quản trị)</option>
+                        </select>
+                    </div>
+
+                    <div className="pt-4 flex gap-3">
+                        <button 
+                            type="button"
+                            onClick={() => setShowModal(false)}
+                            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+                        >
+                            Hủy
+                        </button>
+                        <button 
+                            type="submit"
+                            disabled={submitting}
+                            className="flex-1 px-4 py-2 rounded-lg bg-rose-600 text-white font-bold hover:bg-rose-700 shadow-md transition-all disabled:opacity-70 flex justify-center gap-2 items-center"
+                        >
+                            {submitting && <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>}
+                            {submitting ? "Đang xử lý..." : (isEditMode ? "Lưu thay đổi" : "Tạo User")}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
