@@ -339,7 +339,7 @@ def upload_new_version(
 def validate_submission_window(conference_id: int):
 
     try:
-        url = f"{settings.CONFERENCE_SERVICE_URL}/conferences/{conference_id}"
+        url = f"{settings.CONFERENCE_SERVICE_URL}/{conference_id}"
         resp = requests.get(url, timeout=5)
         
         if resp.status_code == 404:

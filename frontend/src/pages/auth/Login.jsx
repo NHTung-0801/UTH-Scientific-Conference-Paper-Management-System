@@ -2,11 +2,14 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 
-import authApi from "../../api/authApi";
-import { setToken, getUserRole } from "../../utils/auth";
+// [QUAN TRỌNG] Import useAuth để đồng bộ trạng thái đăng nhập
+import { useAuth } from "../../context/AuthContext";
+import { getUserRole } from "../../utils/auth";
 
 const Login = () => {
   const navigate = useNavigate();
+  // Lấy hàm login từ Context (Hàm này đã xử lý lưu token và cập nhật state User)
+  const { login } = useAuth(); 
 
   const [formData, setFormData] = useState({
     email: "admin@uth.edu.vn",
@@ -20,7 +23,14 @@ const Login = () => {
   };
 
   const redirectByRole = (role) => {
-    const r = (role || "").toString().toUpperCase();
+    // Xử lý trường hợp role trả về là mảng hoặc chuỗi
+    let r = role;
+    if (Array.isArray(role) && role.length > 0) {
+        r = role[0]; 
+    }
+    
+    r = (r || "").toString().toUpperCase();
+    
     switch (r) {
       case "ADMIN":
         navigate("/admin", { replace: true });
@@ -48,45 +58,42 @@ const Login = () => {
 
     setLoading(true);
     try {
-      const res = await authApi.login(formData.email, formData.password);
-      const data = res?.data ?? res;
-      const token = data?.access_token;
+      // [QUAN TRỌNG] Gọi hàm login của Context thay vì gọi API trực tiếp
+      await login(formData.email, formData.password);
 
-      if (!token) {
-        console.error("Login response:", data);
-        toast.error("Đăng nhập thất bại: Server không trả access_token.");
-        return;
-      }
-
-      setToken(token);
-
-      const role = getUserRole();
       toast.success("✅ Đăng nhập thành công!");
 
-      if (!role) {
+      // Lấy role từ token (lúc này token đã được lưu trong localStorage)
+      const role = getUserRole();
+      
+      // Nếu không có role hoặc role rỗng -> mặc định về author
+      if (!role || (Array.isArray(role) && role.length === 0)) {
         navigate("/author", { replace: true });
         return;
       }
 
       redirectByRole(role);
+
     } catch (err) {
       console.error("Login error:", err);
 
       const status = err?.response?.status;
       const data = err?.response?.data;
 
-      if (status === 401) return toast.error("Sai email hoặc mật khẩu!");
-      if (status === 422) {
+      if (status === 401) {
+        toast.error("Sai email hoặc mật khẩu!");
+      } else if (status === 422) {
         const detail = data?.detail;
-        return toast.error(
+        toast.error(
           typeof detail === "string"
             ? `Dữ liệu không hợp lệ: ${detail}`
             : "Dữ liệu đăng nhập không hợp lệ (422)."
         );
+      } else if (status) {
+        toast.error(`Lỗi server (${status}). Vui lòng thử lại.`);
+      } else {
+        toast.error(err.message || "Không thể kết nối đến server. Vui lòng thử lại sau.");
       }
-
-      if (status) toast.error(`Lỗi server (${status}). Vui lòng thử lại.`);
-      else toast.error("Không thể kết nối đến server. Vui lòng thử lại sau.");
     } finally {
       setLoading(false);
     }
@@ -94,6 +101,12 @@ const Login = () => {
 
   const handleOrcid = () => toast.info("ORCID login: Chưa tích hợp.");
   const handleGoogle = () => toast.info("Google login: Chưa tích hợp.");
+
+  // Hàm xử lý chung cho các link chưa phát triển
+  const handlePlaceholderClick = (e) => {
+    e.preventDefault();
+    toast.info("Chức năng đang được phát triển.");
+  };
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen flex flex-col">
@@ -151,14 +164,23 @@ const Login = () => {
               </div>
             </div>
 
+            {/* SỬA LỖI 1: Thay thẻ a bằng button cho Chính sách & Điều khoản */}
             <div className="flex gap-2 text-sm text-gray-400">
-              <a className="hover:text-white transition-colors" href="#">
+              <button 
+                className="hover:text-white transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                type="button"
+                onClick={handlePlaceholderClick}
+              >
                 Chính sách bảo mật
-              </a>
+              </button>
               <span>•</span>
-              <a className="hover:text-white transition-colors" href="#">
+              <button 
+                className="hover:text-white transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                type="button"
+                onClick={handlePlaceholderClick}
+              >
                 Điều khoản dịch vụ
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -225,10 +247,15 @@ const Login = () => {
                     >
                       Mật khẩu
                     </label>
+                    {/* SỬA LỖI 2: Thay thẻ a bằng button cho Quên mật khẩu */}
                     <div className="text-sm">
-                      <a className="font-medium text-primary hover:text-red-700" href="#">
+                      <button 
+                        className="font-medium text-primary hover:text-red-700 bg-transparent border-0 p-0 cursor-pointer" 
+                        type="button"
+                        onClick={handlePlaceholderClick}
+                      >
                         Quên mật khẩu?
-                      </a>
+                      </button>
                     </div>
                   </div>
 
