@@ -198,9 +198,10 @@ def invite_reviewer(
 
         <div style="text-align:center;margin-bottom:20px;">
             <img src="{logo_url}"
-                 alt="Conference Logo"
-                 width="160"
-                 style="border-radius:8px;display:block;margin:auto;" />
+                alt="Conference Logo"
+                width="480"
+                style="max-width:100%; height:auto; border-radius:8px; display:block; margin:auto;" />
+
         </div>
 
         <h3 style="color:#2c3e50;">
