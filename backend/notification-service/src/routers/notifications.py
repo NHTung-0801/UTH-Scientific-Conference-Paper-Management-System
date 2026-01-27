@@ -1,4 +1,5 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, status, HTTPException, Query
+# routers/notifications.py
+from fastapi import APIRouter, BackgroundTasks, Depends, status, HTTPException, Header, Query
 from sqlalchemy.orm import Session
 
 from src import database, schemas, crud
@@ -11,51 +12,45 @@ from src.services.conference_client import get_conference
 from src.database import get_db
 
 from typing import List, Optional
+import os
 
 from .. import database, schemas, crud
 from ..utils import email_utils
+from ..security.deps import get_current_payload  # vẫn dùng cho /me
 
-# ✅ Auth deps
-from ..security.deps import get_current_payload, require_roles
+router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
 
 router = APIRouter(
     prefix="/api/notifications",   # ✅ chuẩn hóa /api
     tags=["Notifications"]
 )
+INTERNAL_KEY = os.getenv("INTERNAL_KEY", "")
 
-# =========================================================
-# 1) INTERNAL: service khác gọi để tạo notification + gửi email
-#    - yêu cầu JWT
-#    - role cho phép: AUTHOR/REVIEWER/CHAIR/ADMIN (dễ cho đồ án)
-# =========================================================
-@router.post(
-    "",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles(["AUTHOR", "REVIEWER", "CHAIR", "ADMIN"]))],
-)
+@router.post("", status_code=status.HTTP_201_CREATED)
 def send_notification(
     req: schemas.NotificationRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(database.get_db),
-    payload=Depends(get_current_payload),
+    x_internal_key: Optional[str] = Header(default=None, alias="X-Internal-Key"),
 ):
-    sender_id = payload.get("user_id") 
+    if not INTERNAL_KEY or x_internal_key != INTERNAL_KEY:
+        raise HTTPException(status_code=401, detail="Invalid internal key")
+
+    # sender_id với internal-call có thể để 0 hoặc None tuỳ DB bạn thiết kế
+    sender_id = 0
 
     saved_msg = crud.create_notification_log(db=db, msg_data=req, sender_id=sender_id)
 
     safe_name = req.receiver_name or "bạn"
-
     html_body = f"""
     <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd;">
         <h3 style="color: #2c3e50;">Xin chào {safe_name},</h3>
         <p>Bạn có một thông báo mới từ hệ thống UTH Conference:</p>
-
         <div style="background-color: #f9f9f9; padding: 15px; margin: 10px 0;">
             <strong>{req.subject}</strong><br>
             <p>{req.body}</p>
         </div>
-
         <p>Vui lòng truy cập hệ thống để xem chi tiết.</p>
         <hr>
         <p style="font-size: 12px; color: #777;">Thông báo tự động từ Notification Service.</p>
@@ -129,7 +124,6 @@ def get_my_inbox(
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Token missing user_id")
-
     return crud.get_user_messages(db=db, user_id=user_id)
 
 
@@ -151,6 +145,7 @@ def mark_as_read(
         raise HTTPException(status_code=404, detail="Message not found")
     
     return {"status": "success", "is_read": True}
+<<<<<<< HEAD
 
 
 @router.post("/reviewer-invite")
@@ -276,3 +271,5 @@ def delete_reviewer_invitation(
         "message": "Reviewer invitation deleted successfully",
         "id": invitation_id
     }
+=======
+>>>>>>> 759202c549372e4218642f44358647d121691d56

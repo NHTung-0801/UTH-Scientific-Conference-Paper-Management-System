@@ -1,428 +1,514 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { toast } from "react-toastify";
+import axios from "axios"; // Dùng để gọi API Rebuttal
 import reviewApi from "../../api/reviewApi";
-import { useAuth } from "../../context/AuthContext";
+import ReviewForm from "./ReviewForm";
+import ReviewDiscussion from "./ReviewDiscussion";
 
-const CRITERIAS = [
-  { key: "Originality", label: "Tính độc đáo", left: "Ít đổi mới", right: "Đột phá", weight: 1 },
-  { key: "TechnicalQuality", label: "Chất lượng kỹ thuật", left: "Có lỗi", right: "Chặt chẽ", weight: 1 },
-  { key: "Relevance", label: "Mức độ phù hợp", left: "Ngoài phạm vi", right: "Rất phù hợp", weight: 1 },
-];
-
-export default function ReviewWorkspace() {
+const ReviewWorkspace = () => {
   const { assignmentId } = useParams();
-  const { user } = useAuth();
   const navigate = useNavigate();
 
+  // --- UI STATES ---
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+  const [viewMode, setViewMode] = useState("standard"); // 'standard' | 'split'
 
+  // --- DATA STATES ---
   const [assignment, setAssignment] = useState(null);
-  const [pdfUrl, setPdfUrl] = useState("");
+  const [paper, setPaper] = useState(null);
+  const [rebuttal, setRebuttal] = useState(null); // <--- State lưu phản biện
+  const [blockedByCoi, setBlockedByCoi] = useState(false);
+  const [coiInfo, setCoiInfo] = useState(null);
 
-  const [review, setReview] = useState(null);
+  // --- REVIEW STATES ---
+  const [reviewId, setReviewId] = useState(null);
+  const [criteriaIdMap, setCriteriaIdMap] = useState({});
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // form state
-  const [scores, setScores] = useState({
-    Originality: 3,
-    TechnicalQuality: 4,
-    Relevance: 5,
+  // --- AUTO SAVE STATES ---
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastAutoSaved, setLastAutoSaved] = useState(null);
+  const isFirstLoad = useRef(true); 
+  const [saving, setSaving] = useState(false);
+
+  // --- FORM STATE ---
+  const [form, setForm] = useState({
+    final_score: 0,
+    confidence_score: 3,
+    content_author: "",
+    content_pc: "",
+    is_anonymous: true,
+    is_draft: true,
+    criterias: {
+      novelty: { grade: 0, comment: "", weight: 0.4 },
+      methodology: { grade: 0, comment: "", weight: 0.3 },
+      presentation: { grade: 0, comment: "", weight: 0.3 },
+    },
   });
-  const [recommendation, setRecommendation] = useState("Accept"); // UI only
-  const [confidence, setConfidence] = useState(4); // 1..5
-  const [contentAuthor, setContentAuthor] = useState("");
-  const [contentPc, setContentPc] = useState("");
 
-  const existingCriteriaNames = useMemo(() => {
-    const arr = review?.criterias ?? [];
-    return new Set(arr.map((c) => c.criteria_name));
-  }, [review]);
+  // Helper hiển thị thời gian
+  const formatTime = (date) => date.toLocaleTimeString("vi-VN", { hour: '2-digit', minute:'2-digit' });
 
-  const calcFinalScore = useMemo(() => {
-    const vals = Object.values(scores);
-    const sum = vals.reduce((a, b) => a + b, 0);
-    return Math.round((sum / vals.length) * 10) / 10; // 1 decimal
-  }, [scores]);
+  // Tính toán Deadline
+  const isOverdue = useMemo(() => {
+    if (!assignment?.due_date) return false;
+    return new Date() > new Date(assignment.due_date);
+  }, [assignment]);
 
-  const loadAll = async () => {
-    setLoading(true);
-    setErr("");
-    try {
-      const [assRes, pdfRes, listRevRes] = await Promise.all([
-        reviewApi.getAssignment(Number(assignmentId)),
-        reviewApi.getPaperPdfUrlByAssignment(Number(assignmentId)),
-        reviewApi.listReviews({ assignmentId: Number(assignmentId) }),
-      ]);
-
-      setAssignment(assRes.data);
-      setPdfUrl(pdfRes.data?.pdf_url || "");
-
-      const reviews = listRevRes.data ?? [];
-      let current = reviews[0];
-
-      if (!current) {
-        const created = await reviewApi.createReview({
-          assignment_id: Number(assignmentId),
-          is_anonymous: true,
-          is_draft: true,
-        });
-        current = created.data;
+  // Lấy URL PDF
+  const pdfUrl = useMemo(() => {
+      if (paper?.versions && paper.versions.length > 0) {
+          return paper.versions[0].file_url;
       }
+      return null;
+  }, [paper]);
 
-      setReview(current);
-
-      // hydrate
-      if (current?.confidence_score) setConfidence(current.confidence_score);
-      if (current?.content_author) setContentAuthor(current.content_author);
-      if (current?.content_pc) setContentPc(current.content_pc);
-
-      const byName = new Map((current?.criterias ?? []).map((c) => [c.criteria_name, c.grade]));
-      setScores((prev) => ({
-        ...prev,
-        Originality: byName.get("Originality") ?? prev.Originality,
-        TechnicalQuality: byName.get("TechnicalQuality") ?? prev.TechnicalQuality,
-        Relevance: byName.get("Relevance") ?? prev.Relevance,
-      }));
-    } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || "Không tải được workspace");
-    } finally {
-      setLoading(false);
+  // Tự động chuyển sang Split View nếu có PDF và màn hình lớn
+  useEffect(() => {
+    if (pdfUrl && window.innerWidth > 1024) {
+        setViewMode("split");
     }
-  };
+  }, [pdfUrl]);
 
   useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const ensureAssignmentAccepted = async (a) => {
+      const st = (a?.status?.value ?? a?.status ?? "").toString().toLowerCase();
+      if (st === "invited") {
+        await reviewApi.acceptAssignment(a.id);
+        const refreshed = await reviewApi.getAssignment(a.id);
+        return refreshed.data || refreshed;
+      }
+      return a;
+    };
+
+    const checkOpenCoiForPaper = async (paperId) => {
+      if (!paperId) return null;
+      try {
+        const res = await reviewApi.listCOI({ paper_id: Number(paperId) });
+        const list = Array.isArray(res) ? res : (res.data || []);
+        const open = list.find((c) => (c.status?.value ?? c.status ?? "").toString().toLowerCase() === "open");
+        return open || null;
+      } catch (e) { return null; }
+    };
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setBlockedByCoi(false);
+        setCoiInfo(null);
+        setIsSubmitted(false);
+        setRebuttal(null);
+
+        // 1. Get Assignment
+        const assignmentRes = await reviewApi.getAssignment(assignmentId);
+        let a = assignmentRes?.data || assignmentRes;
+        if (!a || !a.id) throw new Error(`Không tìm thấy assignment #${assignmentId}`);
+
+        try { a = await ensureAssignmentAccepted(a); } 
+        catch (e) { toast.error("Không thể accept assignment: " + e.message); }
+        setAssignment(a);
+
+        // 2. Get Paper Info
+        const paperId = a.paper_id ?? a.paperId ?? a.paper?.id;
+        const openCoi = await checkOpenCoiForPaper(paperId);
+        if (openCoi) {
+          setBlockedByCoi(true);
+          setCoiInfo(openCoi);
+        }
+
+        if (a.paper) {
+          setPaper(a.paper);
+        } else {
+          // Fallback fetch PDF URL
+          let url = "";
+          try {
+             const pdfRes = await reviewApi.getPaperPdfUrlByAssignment(assignmentId);
+             url = (pdfRes.data || pdfRes).pdf_url || "";
+          } catch(ignore) {}
+
+          setPaper({
+             id: paperId,
+             title: a.paper_title || a.title || `Paper #${paperId}`,
+             abstract: a.paper_abstract || "Nội dung tóm tắt đang được bảo mật.",
+             versions: url ? [{ file_url: url }] : []
+          });
+        }
+
+        // --- 👇 LẤY REBUTTAL (PHẢN BIỆN CỦA TÁC GIẢ) 👇 ---
+        if (paperId && !openCoi) {
+            try {
+                // Gọi trực tiếp axios vì chưa có trong reviewApi
+                const token = localStorage.getItem("token");
+                const rebRes = await axios.get(`http://localhost:8080/review/rebuttals/paper/${paperId}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setRebuttal(rebRes.data);
+            } catch (e) {
+                // 404 nghĩa là chưa có rebuttal -> Không làm gì cả
+                setRebuttal(null);
+            }
+        }
+        // --------------------------------------------------
+
+        if (openCoi) return; 
+
+        // 3. Get Review
+        const reviewsRes = await reviewApi.listReviews({ assignmentId: Number(assignmentId) });
+        const reviews = Array.isArray(reviewsRes) ? reviewsRes : (reviewsRes.data || []);
+
+        if (reviews.length > 0) {
+          const r0 = reviews[0];
+          setReviewId(r0.id);
+          const rDetailRes = await reviewApi.getReview(r0.id);
+          const r = rDetailRes.data || rDetailRes;
+
+          const submitted = r.is_draft === false || r.submitted_at != null;
+          setIsSubmitted(submitted);
+
+          const map = {};
+          (r.criterias || []).forEach((c) => {
+            const name = (c.criteria_name || "").toLowerCase();
+            if (name.includes("novel")) map.novelty = c.id;
+            else if (name.includes("method")) map.methodology = c.id;
+            else if (name.includes("present")) map.presentation = c.id;
+          });
+          setCriteriaIdMap(map);
+          const findById = (id) => (r.criterias || []).find((c) => c.id === id);
+
+          setForm((prev) => ({
+            ...prev,
+            final_score: r.final_score ?? 0,
+            confidence_score: r.confidence_score ?? 3,
+            content_author: r.content_author ?? "",
+            content_pc: r.content_pc ?? "",
+            is_anonymous: r.is_anonymous ?? true,
+            is_draft: r.is_draft ?? true,
+            criterias: {
+              novelty: { ...prev.criterias.novelty, grade: findById(map.novelty)?.grade ?? 0, comment: findById(map.novelty)?.comment ?? "" },
+              methodology: { ...prev.criterias.methodology, grade: findById(map.methodology)?.grade ?? 0, comment: findById(map.methodology)?.comment ?? "" },
+              presentation: { ...prev.criterias.presentation, grade: findById(map.presentation)?.grade ?? 0, comment: findById(map.presentation)?.comment ?? "" },
+            },
+          }));
+        }
+      } catch (error) {
+        toast.error("Lỗi tải trang: " + (error.message || "Unknown"));
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (assignmentId) fetchData();
   }, [assignmentId]);
 
-  const saveDraft = async () => {
-    if (!review?.id) return;
+  // Tính điểm
+  useEffect(() => {
+    const { novelty, methodology, presentation } = form.criterias;
+    const score = novelty.grade * (novelty.weight || 0.4) + methodology.grade * (methodology.weight || 0.3) + presentation.grade * (presentation.weight || 0.3);
+    const rounded = Math.round(score * 10) / 10;
+    setForm(prev => (prev.final_score === rounded) ? prev : { ...prev, final_score: rounded });
+  }, [form.criterias]);
 
+  // Auto Save
+  useEffect(() => {
+    if (loading || isSubmitted || isFirstLoad.current) { isFirstLoad.current = false; return; }
+    const timer = setTimeout(() => { onSave(true, true); }, 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
+
+  // --- Handlers ---
+  const handleCriteriaChange = (key, field, value) => {
+    if (isSubmitted) return; 
+    setForm((prev) => ({ ...prev, criterias: { ...prev.criterias, [key]: { ...prev.criterias[key], [field]: value } } }));
+  };
+
+  const handleFieldChange = (field, value) => {
+    if (isSubmitted) return; 
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const validate = () => {
+    if (form.final_score <= 0) return "Vui lòng chấm điểm các tiêu chí";
+    if (!form.content_author.trim()) return "Vui lòng nhập nhận xét cho tác giả";
+    return null;
+  };
+
+  const handleReopen = async () => {
+    if (!window.confirm("Bạn muốn chỉnh sửa lại kết quả đánh giá? Bài chấm sẽ chuyển về trạng thái NHÁP.")) return;
     setSaving(true);
-    setErr("");
+    try {
+        await reviewApi.updateReview(reviewId, { is_draft: true });
+        setIsSubmitted(false); 
+        toast.success("Đã mở lại bài chấm (Chế độ Nháp)");
+        setForm(prev => ({ ...prev, is_draft: true }));
+    } catch (e) {
+        toast.error("Không thể mở lại bài chấm: " + (e?.response?.data?.detail || e.message));
+    } finally {
+        setSaving(false);
+    }
+  };
+
+  const onSave = async (isDraft = true, silent = false) => {
+    if (isSubmitted && !silent) { toast.info("Bài đã nộp. Vui lòng bấm 'Chỉnh sửa lại'."); return; }
+    const err = (!isDraft && !silent) ? validate() : null;
+    if (err) { toast.warning(err); return; }
+
+    if (silent) setIsAutoSaving(true); else setSaving(true);
 
     try {
-      // 1) Update review core fields
-      await reviewApi.updateReview(review.id, {
-        final_score: calcFinalScore,
-        confidence_score: confidence,
-        content_author: contentAuthor,
-        content_pc: contentPc,
-        is_draft: true,
-        // recommendation: recommendation, // (nếu backend có field này thì bật lên)
-      });
-
-      // 2) Map criterias hiện có theo name để biết cái nào update, cái nào create
-      const existingMap = new Map(
-        (review?.criterias ?? []).map((c) => [c.criteria_name, c])
-      );
-
-      // 3) Upsert criterias
-      for (const c of CRITERIAS) {
-        const existed = existingMap.get(c.key);
-        const payload = {
-          criteria_name: c.key,
-          grade: scores[c.key],
-          weight: c.weight,
-          comment: null,
-        };
-
-        if (existed?.id) {
-          // ✅ UPDATE
-          await reviewApi.updateCriteria(review.id, existed.id, payload);
-        } else {
-          // ✅ CREATE
-          await reviewApi.addCriteria(review.id, payload);
-        }
+      let currentReviewId = reviewId;
+      if (!currentReviewId) {
+        const createRes = await reviewApi.createReview({
+          assignment_id: Number(assignmentId),
+          final_score: form.final_score,
+          confidence_score: Number(form.confidence_score),
+          content_author: form.content_author,
+          content_pc: form.content_pc,
+          is_anonymous: form.is_anonymous,
+          is_draft: true,
+        });
+        const newReview = createRes.data || createRes;
+        currentReviewId = newReview.id;
+        setReviewId(currentReviewId);
+      } else {
+        await reviewApi.updateReview(currentReviewId, {
+          final_score: form.final_score,
+          confidence_score: Number(form.confidence_score),
+          content_author: form.content_author,
+          content_pc: form.content_pc,
+          is_anonymous: form.is_anonymous,
+          is_draft: true, 
+        });
       }
 
-      // 4) Reload review để UI nhận criterias mới nhất (id, grade)
-      const fresh = await reviewApi.getReview(review.id);
-      setReview(fresh.data);
-    } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || "Lưu nháp thất bại");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-
-  const submit = async () => {
-    if (!review?.id) return;
-    setSaving(true);
-    setErr("");
-    try {
-      // ensure draft saved
-      await saveDraft();
-
-      // mark as submitted + update assignment completed
-      await reviewApi.updateReview(review.id, {
-        is_draft: false,
-        submitted_at: new Date().toISOString(),
+      const promises = Object.keys(form.criterias).map(async (key) => {
+        const cData = form.criterias[key];
+        const criteriaNameMap = { novelty: "Novelty & Significance", methodology: "Methodology & Technical Depth", presentation: "Presentation & Clarity" };
+        const payload = { grade: Number(cData.grade), comment: cData.comment, weight: cData.weight };
+        const existingId = criteriaIdMap[key];
+        
+        if (existingId) return reviewApi.updateCriteria(currentReviewId, existingId, payload);
+        else {
+           const res = await reviewApi.addCriteria(currentReviewId, { ...payload, criteria_name: criteriaNameMap[key] });
+           const created = res.data || res;
+           setCriteriaIdMap(prev => ({ ...prev, [key]: created.id }));
+           return created;
+        }
       });
+      await Promise.all(promises);
 
-      await reviewApi.updateAssignment(Number(assignmentId), { status: "Completed" });
-
-      navigate("/reviewer");
+      if (!isDraft) {
+        await reviewApi.submitReview(currentReviewId);
+        toast.success("Đã nộp bài review thành công!");
+        setIsSubmitted(true);
+        navigate("/reviewer/assignments");
+      } else {
+        if (!silent) toast.success("Đã lưu bản nháp (" + formatTime(new Date()) + ")");
+        if (silent) setLastAutoSaved(new Date());
+      }
     } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || "Nộp đánh giá thất bại");
+      if (!silent) toast.error("Lỗi: " + (e?.response?.data?.detail || e.message));
     } finally {
-      setSaving(false);
+      if (silent) setIsAutoSaving(false); else setSaving(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="h-[calc(100vh-0px)] flex items-center justify-center bg-background-light dark:bg-background-dark">
-        <p className="text-sm text-gray-500 dark:text-gray-400">Đang tải...</p>
-      </div>
-    );
-  }
+  // --- Sub-component: REBUTTAL DISPLAY ---
+  const RebuttalSection = () => {
+      if (!rebuttal) return null;
+      return (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 mb-6 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2 mb-3">
+                <span className="material-symbols-outlined text-purple-700">rate_review</span>
+                <h3 className="font-bold text-purple-900 text-sm uppercase tracking-wider">
+                    Phản hồi từ tác giả (Author's Rebuttal)
+                </h3>
+                <span className="text-xs text-purple-500 ml-auto">
+                    Gửi lúc: {new Date(rebuttal.created_at).toLocaleString("vi-VN")}
+                </span>
+            </div>
+            <div className="bg-white p-4 rounded-lg border border-purple-100 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed shadow-sm max-h-60 overflow-y-auto custom-scrollbar">
+                {rebuttal.content}
+            </div>
+            <div className="mt-2 text-xs text-purple-600 font-medium italic flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">info</span>
+                Hãy xem xét lại điểm số của bạn dựa trên giải trình này (nếu hợp lý).
+            </div>
+        </div>
+      );
+  };
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-medium animate-pulse">Đang tải workspace...</div>;
+  if (blockedByCoi) return <div className="min-h-screen flex items-center justify-center p-4">Bạn đã khai báo COI.</div>;
 
   return (
-    <div className="bg-background-light dark:bg-background-dark text-text-main font-display h-screen flex flex-col overflow-hidden">
-      {/* header giống thiết kế */}
-      <header className="flex-none flex items-center justify-between whitespace-nowrap border-b border-solid border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-[#2a1d1d] px-6 py-3 z-20 shadow-sm">
-        <div className="flex items-center gap-4 text-text-main dark:text-white">
-          <div className="size-8 flex items-center justify-center bg-primary/10 rounded-lg text-primary">
-            <span className="material-symbols-outlined">rate_review</span>
+    <div className="bg-[#f8f9fa] h-screen flex flex-col overflow-hidden">
+      {/* --- HEADER --- */}
+      <header className="bg-white border-b border-slate-200 shrink-0 z-20 shadow-sm h-16 flex items-center px-4 justify-between">
+          <div className="flex items-center gap-4 min-w-0">
+            <button onClick={() => navigate("/reviewer/assignments")} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
+              <span className="material-symbols-outlined">arrow_back</span>
+            </button>
+            <div className="min-w-0">
+               <h1 className="text-lg font-black text-slate-900 truncate max-w-md" title={paper?.title}>{paper?.title || `Paper #${paper?.id}`}</h1>
+               <div className="flex items-center gap-3 text-xs text-slate-500 font-semibold">
+                 {isAutoSaving ? <span className="text-slate-500 animate-pulse">Đang lưu...</span> : lastAutoSaved ? <span className="text-emerald-600">Đã lưu tự động {formatTime(lastAutoSaved)}</span> : <span>Sẵn sàng</span>}
+               </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold leading-tight tracking-[-0.015em]">UTH-ConfMS</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-300 font-medium">
-              Không gian đánh giá • Assignment #{assignment?.id}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <span className="hidden md:block text-sm font-medium text-text-main dark:text-white">
-            {user?.name || `Reviewer #${user?.id ?? ""}`}
-          </span>
-          <button
-            onClick={() => navigate(-1)}
-            className="rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] px-3 py-2 text-sm font-bold bg-white dark:bg-transparent text-text-main dark:text-white hover:bg-gray-50 dark:hover:bg-[#3a2a2a]"
-          >
-            Quay lại
-          </button>
-        </div>
+          <div className="flex items-center gap-3">
+             {/* Toggle View Mode Button */}
+             <div className="hidden lg:flex bg-slate-100 rounded-lg p-1 mr-2 border border-slate-200">
+                <button 
+                   onClick={() => setViewMode("standard")}
+                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'standard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                   <span className="material-symbols-outlined text-sm">view_agenda</span>
+                   Standard
+                </button>
+                <button 
+                   onClick={() => setViewMode("split")}
+                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'split' ? 'bg-white text-[#1976d2] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                   disabled={!pdfUrl}
+                   title={!pdfUrl ? "Không có file PDF để xem" : "Vừa đọc vừa chấm"}
+                >
+                   <span className="material-symbols-outlined text-sm">vertical_split</span>
+                   Split View
+                </button>
+             </div>
+
+             {/* Action Buttons */}
+             {!isSubmitted ? (
+                <>
+                  <button disabled={saving} onClick={() => onSave(true, false)} className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 disabled:opacity-50">
+                    <span className="material-symbols-outlined text-xl">save</span> Lưu nháp
+                  </button>
+                  <button disabled={saving} onClick={() => onSave(false, false)} className="flex items-center gap-2 px-5 py-2 bg-primary text-white font-bold rounded-lg hover:shadow-lg disabled:opacity-50">
+                    {saving ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <span className="material-symbols-outlined text-xl">send</span>}
+                    Nộp bài
+                  </button>
+                </>
+             ) : (
+                !isOverdue ? (
+                   <button disabled={saving} onClick={handleReopen} className="flex items-center gap-2 px-4 py-2 bg-white border border-amber-200 text-amber-700 font-bold rounded-lg hover:bg-amber-50 shadow-sm">
+                      <span className="material-symbols-outlined text-xl">edit</span> Chỉnh sửa lại
+                   </button>
+                ) : (
+                   <div className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg border border-emerald-200 cursor-not-allowed select-none">
+                      <span className="material-symbols-outlined text-xl">check_circle</span> Đã nộp
+                   </div>
+                )
+             )}
+          </div>
       </header>
 
-      <main className="flex-1 flex overflow-hidden">
-        {/* LEFT: PDF */}
-        <section className="flex-none w-[60%] flex flex-col border-r border-[#e5dcdc] dark:border-[#4a3b3b] bg-[#525659] relative">
-          <div className="h-12 bg-[#323639] flex items-center justify-between px-4 shadow-md z-10 text-gray-200">
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-medium truncate max-w-[420px]">
-                Paper #{assignment?.paper_id} • PDF
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {pdfUrl ? (
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="p-1.5 hover:bg-white/10 rounded transition-colors text-gray-300"
-                  title="Mở PDF"
-                >
-                  <span className="material-symbols-outlined text-[20px]">open_in_new</span>
-                </a>
-              ) : null}
-            </div>
-          </div>
+      {/* --- MAIN CONTENT --- */}
+      {viewMode === "split" && pdfUrl ? (
+        // === SPLIT VIEW LAYOUT ===
+        <div className="flex flex-1 overflow-hidden">
+           {/* LEFT: PDF Viewer */}
+           <div className="w-1/2 h-full border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-center">
+              {/* Dùng thẻ object để ép hiển thị PDF */}
+              <object 
+                 data={`${pdfUrl}#view=FitH&toolbar=0`} 
+                 type="application/pdf" 
+                 className="w-full h-full"
+                 width="100%"
+                 height="100%"
+              >
+                 <div className="text-center p-6">
+                    <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">picture_as_pdf</span>
+                    <p className="text-slate-500 mb-4">Trình duyệt không hỗ trợ xem trực tiếp.</p>
+                    <a href={pdfUrl} target="_blank" rel="noreferrer" className="px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90">
+                       Tải file về máy
+                    </a>
+                 </div>
+              </object>
+           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 flex justify-center">
-            <div className="w-full h-full max-w-[900px] bg-white shadow-2xl rounded overflow-hidden">
-              {pdfUrl ? (
-                <iframe title="paper-pdf" src={pdfUrl} className="w-full h-full" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <p className="text-sm text-gray-500">Không có PDF url</p>
+           {/* RIGHT: Grading Form */}
+           <div className="w-1/2 h-full overflow-y-auto bg-[#f8f9fa] p-6 custom-scrollbar">
+              <div className="max-w-3xl mx-auto space-y-6">
+                 {/* Discussion Mini-view */}
+                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                       <h3 className="font-bold text-slate-800 text-sm">Thảo luận</h3>
+                       <Link to={`/reviewer/discussion/${paper?.id}`} className="text-xs font-bold text-primary hover:underline">Mở rộng</Link>
+                    </div>
+                    <div className="h-40 overflow-y-auto p-2 custom-scrollbar">
+                       {paper?.id && <ReviewDiscussion paperId={paper.id} compact={true} />}
+                    </div>
+                 </div>
+
+                 {/* REBUTTAL SECTION */}
+                 <RebuttalSection />
+
+                 <ReviewForm form={form} onCriteriaChange={handleCriteriaChange} onFieldChange={handleFieldChange} />
+                 
+                 {isSubmitted && !isOverdue && (
+                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                      Bạn có thể chỉnh sửa bài đánh giá này vì chưa đến hạn chót.
+                   </div>
+                 )}
+              </div>
+           </div>
+        </div>
+      ) : (
+        // === STANDARD VIEW LAYOUT (Cũ) ===
+        <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 w-full overflow-y-auto h-full pb-20 custom-scrollbar">
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                  <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">article</span> Thông tin bài báo
+                  </h2>
+                  <div className="space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase">Tiêu đề</label>
+                        <p className="text-sm font-semibold text-slate-800 leading-snug mt-1">{paper?.title}</p>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase">Tóm tắt</label>
+                        <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-600 leading-relaxed max-h-60 overflow-y-auto custom-scrollbar">
+                          {paper?.abstract || "Không có nội dung."}
+                        </div>
+                    </div>
+                    {pdfUrl && (
+                      <div className="pt-2">
+                          <a href={pdfUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2.5 border border-primary/20 bg-primary/5 text-primary font-bold rounded-xl hover:bg-primary/10">
+                            <span className="material-symbols-outlined">open_in_new</span> Mở PDF tab mới
+                          </a>
+                      </div>
+                    )}
+                  </div>
+              </div>
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800">Thảo luận</h3>
+                    <Link to={`/reviewer/discussion/${paper?.id}`} className="text-xs font-bold text-primary hover:underline">Mở rộng</Link>
+                  </div>
+                  <div className="p-4 max-h-96 overflow-y-auto custom-scrollbar">
+                    {paper?.id && <ReviewDiscussion paperId={paper.id} compact={true} />}
+                  </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-8">
+              {/* REBUTTAL SECTION */}
+              <RebuttalSection />
+
+              <ReviewForm form={form} onCriteriaChange={handleCriteriaChange} onFieldChange={handleFieldChange} />
+              
+              {isSubmitted && !isOverdue && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                   Bạn có thể chỉnh sửa bài đánh giá này vì chưa đến hạn chót.
                 </div>
               )}
             </div>
-          </div>
-        </section>
-
-        {/* RIGHT: FORM */}
-        <section className="flex-none w-[40%] flex flex-col bg-white dark:bg-[#2a1d1d] border-l border-[#e5dcdc] dark:border-[#4a3b3b] relative">
-          <div className="px-8 py-5 border-b border-[#e5dcdc] dark:border-[#4a3b3b] flex-none bg-white dark:bg-[#2a1d1d] z-10">
-            <div className="flex justify-between items-start mb-1">
-              <h2 className="text-xl font-bold text-text-main dark:text-white">Biểu mẫu đánh giá</h2>
-              <span className="text-xs font-semibold px-2 py-1 bg-yellow-100 text-yellow-800 rounded border border-yellow-200">
-                {review?.is_draft ? "Đã lưu nháp" : "Đã nộp"}
-              </span>
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-300">
-              Vui lòng đánh giá bài báo dựa trên các tiêu chí bên dưới.
-            </p>
-            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8 pb-32">
-            {/* Quantitative */}
-            <div className="space-y-6">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-300 border-b border-[#e5dcdc] dark:border-[#4a3b3b] pb-2">
-                Đánh giá định lượng
-              </h3>
-
-              {CRITERIAS.map((c) => {
-                const value = scores[c.key];
-                const pct = ((value - 1) / 4) * 100;
-                return (
-                  <div key={c.key} className="group">
-                    <div className="flex justify-between mb-3">
-                      <label className="text-sm font-semibold text-text-main dark:text-white">
-                        {c.label}
-                      </label>
-                      <span className="text-sm font-bold text-primary">{value}/5</span>
-                    </div>
-
-                    <div className="relative h-2 bg-[#e5dcdc] dark:bg-[#4a3b3b] rounded-full">
-                      <div
-                        className="absolute top-0 left-0 h-full bg-primary rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                      <input
-                        className="absolute top-[-6px] left-0 w-full h-5 opacity-0 cursor-pointer z-10"
-                        type="range"
-                        min="1"
-                        max="5"
-                        value={value}
-                        onChange={(e) =>
-                          setScores((prev) => ({ ...prev, [c.key]: Number(e.target.value) }))
-                        }
-                      />
-                      <div
-                        className="absolute top-[-4px] bg-white border-2 border-primary rounded-full shadow"
-                        style={{ left: `${pct}%`, width: 16, height: 16, transform: "translateX(-50%)" }}
-                      />
-                    </div>
-
-                    <div className="flex justify-between mt-2 text-xs text-gray-500 dark:text-gray-300">
-                      <span>{c.left}</span>
-                      <span>{c.right}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Recommendation */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-300 border-b border-[#e5dcdc] dark:border-[#4a3b3b] pb-2">
-                Khuyến nghị
-              </h3>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-text-main dark:text-white mb-2">
-                    Quyết định gợi ý
-                  </label>
-                  <select
-                    value={recommendation}
-                    onChange={(e) => setRecommendation(e.target.value)}
-                    className="w-full rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-[#211111] px-3 py-2 text-sm text-text-main dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="Accept">Chấp nhận</option>
-                    <option value="WeakAccept">Hơi nghiêng chấp nhận</option>
-                    <option value="Borderline">Cân nhắc</option>
-                    <option value="WeakReject">Hơi nghiêng từ chối</option>
-                    <option value="Reject">Từ chối</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-text-main dark:text-white mb-2">
-                    Độ tự tin (1-5)
-                  </label>
-                  <select
-                    value={confidence}
-                    onChange={(e) => setConfidence(Number(e.target.value))}
-                    className="w-full rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-[#211111] px-3 py-2 text-sm text-text-main dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  >
-                    {[1, 2, 3, 4, 5].map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
-                <p className="text-xs text-primary font-bold">
-                  Điểm tổng kết (auto): {calcFinalScore}/5
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                  (Là trung bình 3 tiêu chí. Bạn có thể đổi logic nếu muốn.)
-                </p>
-              </div>
-            </div>
-
-            {/* Text feedback */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-300 border-b border-[#e5dcdc] dark:border-[#4a3b3b] pb-2">
-                Nhận xét định tính
-              </h3>
-
-              <div>
-                <label className="block text-sm font-semibold text-text-main dark:text-white mb-2">
-                  Nhận xét cho tác giả
-                </label>
-                <textarea
-                  value={contentAuthor}
-                  onChange={(e) => setContentAuthor(e.target.value)}
-                  rows={6}
-                  className="w-full rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-[#211111] px-3 py-2 text-sm text-text-main dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Góp ý rõ ràng, xây dựng..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-text-main dark:text-white mb-2">
-                  Ghi chú cho PC/Chair (ẩn với tác giả)
-                </label>
-                <textarea
-                  value={contentPc}
-                  onChange={(e) => setContentPc(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-[#211111] px-3 py-2 text-sm text-text-main dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Các điểm cần lưu ý nội bộ..."
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => navigate(`/reviewer/discussion/${assignment?.paper_id}`)}
-                className="w-full rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-transparent px-4 py-2 text-sm font-bold text-text-main dark:text-white hover:bg-gray-50 dark:hover:bg-[#3a2a2a]"
-              >
-                Mở thảo luận phản biện
-              </button>
-            </div>
-          </div>
-
-          {/* sticky actions */}
-          <div className="absolute bottom-0 left-0 right-0 px-8 py-4 bg-white/95 dark:bg-[#2a1d1d]/95 backdrop-blur border-t border-[#e5dcdc] dark:border-[#4a3b3b] flex gap-3">
-            <button
-              onClick={saveDraft}
-              disabled={saving || review?.is_draft === false}
-              className="flex-1 rounded-lg border border-[#e5dcdc] dark:border-[#4a3b3b] bg-white dark:bg-transparent px-4 py-3 text-sm font-bold text-text-main dark:text-white hover:bg-gray-50 dark:hover:bg-[#3a2a2a] disabled:opacity-60"
-            >
-              Lưu nháp
-            </button>
-            <button
-              onClick={submit}
-              disabled={saving || review?.is_draft === false}
-              className="flex-1 rounded-lg bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-red-600 disabled:opacity-60"
-            >
-              Nộp đánh giá
-            </button>
-          </div>
-        </section>
-      </main>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default ReviewWorkspace;

@@ -2,6 +2,8 @@ from fastapi import FastAPI
 
 from src.database import engine, Base
 from src.routers import notifications
+from .database import engine, Base
+from .routers import notifications, prefs
 
 Base.metadata.create_all(bind=engine)
 
@@ -12,6 +14,7 @@ app = FastAPI(
 )
 
 app.include_router(notifications.router)
+app.include_router(prefs.router)
 
 
 @app.get("/")

@@ -1,4 +1,3 @@
-# src/crud.py
 from sqlalchemy.orm import Session
 from datetime import datetime
 from sqlalchemy import or_
@@ -63,6 +62,23 @@ def update_review(db: Session, review_id: int, data: schemas.ReviewUpdate):
 def add_review_criteria(db: Session, review_id: int, data: schemas.ReviewCriteriaCreate) -> models.ReviewCriteria:
     obj = models.ReviewCriteria(review_id=review_id, **data.model_dump())
     db.add(obj); db.commit(); db.refresh(obj)
+    return obj
+
+# ✅ NEW: criteria helpers for PATCH
+def get_review_criteria(db: Session, criteria_id: int):
+    return (
+        db.query(models.ReviewCriteria)
+        .filter(models.ReviewCriteria.id == criteria_id)
+        .first()
+    )
+
+def update_review_criteria(db: Session, criteria_id: int, data: schemas.ReviewCriteriaUpdate):
+    obj = get_review_criteria(db, criteria_id)
+    if not obj:
+        return None
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(obj, k, v)
+    db.commit(); db.refresh(obj)
     return obj
 
 # ========= HELPERS (SLA / COI enforcement) =========
@@ -143,8 +159,6 @@ def create_discussion(db: Session, data: schemas.DiscussionCreate, sender_id: in
     db.commit()
     db.refresh(obj)
     return obj
-
-
 
 def list_discussions(db: Session, paper_id: int):
     return (

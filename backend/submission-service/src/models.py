@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from .database import Base
 from sqlalchemy.dialects.mysql import JSON
+from .database import Base
 import enum
 
 # 1. Định nghĩa Enum trạng thái bài báo
@@ -12,7 +12,7 @@ class PaperStatus(str, enum.Enum):
     ACCEPTED = "ACCEPTED"           # Được chấp nhận
     REJECTED = "REJECTED"           # Bị từ chối
     REVISION_REQUIRED = "REVISION_REQUIRED" # Cần sửa chữa 
-    WITHDRAWN = "WITHDRAWN"
+    WITHDRAWN = "WITHDRAWN" # rút bài
 
 # 2. Bảng chính: Bài báo (Papers)
 class Paper(Base):
@@ -57,8 +57,8 @@ class PaperAuthor(Base):
     email = Column(String(255), nullable=False)
     organization = Column(String(255), nullable=True)
 
-    is_corresponding = Column(Boolean, default=False) 
-    user_id = Column(Integer, nullable=True)
+    is_corresponding = Column(Boolean, default=False) # Là tác giả liên hệ chính?
+    user_id = Column(Integer, nullable=True) # Có thể null nếu tác giả đó chưa có tài khoản hệ thống
 
     paper = relationship("Paper", back_populates="authors")
 
