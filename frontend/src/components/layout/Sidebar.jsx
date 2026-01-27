@@ -3,7 +3,7 @@ import { NavLink, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ROLES } from "../../utils/constants";
 
-// --- STYLE ---
+// --- STYLE GIỮ NGUYÊN TÔNG ROSE CỦA BẠN ---
 const linkBase =
   "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-colors cursor-pointer";
 
@@ -54,7 +54,7 @@ function SidebarShell({ children }) {
   );
 }
 
-// Menu Nav Component
+// Menu Nav Component (GIỮ NGUYÊN CŨ)
 function MenuNav({ items }) {
   return (
     <nav className="flex flex-col gap-1 flex-1 overflow-y-auto custom-scrollbar">
@@ -143,9 +143,9 @@ export default function Sidebar() {
   const hasRole = (role) => roles.includes(role);
 
   const isAuthorArea = location.pathname.startsWith("/author");
-  const isChairArea = location.pathname.startsWith("/chair");
   const isAdminArea = location.pathname.startsWith("/admin");
   const isReviewerArea = location.pathname.startsWith("/reviewer");
+  const isChairArea = location.pathname.startsWith("/chair");
 
   let menuItems = [];
   let portalTitle = "Trang chủ";
@@ -157,7 +157,8 @@ export default function Sidebar() {
     portalTitle = "Quản trị viên";
     portalIcon = "admin_panel_settings";
     menuItems = [
-      { to: "/admin/dashboard", label: "Tổng quan", icon: "grid_view" },
+      { to: "/admin/dashboard", label: "Tổng quan", icon: "grid_view", exact: true },
+      { to: "/admin/profile", label: "Hồ sơ cá nhân", icon: "person" }, // ✅ THÊM MỚI
       { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" },
       { to: "/admin/conferences", label: "Quản lý Hội nghị", icon: "calendar_month" },
       { to: "/admin/settings", label: "Cài đặt tài khoản", icon: "manage_accounts" },
@@ -180,6 +181,7 @@ export default function Sidebar() {
     portalIcon = "rate_review";
     menuItems = [
       { to: "/reviewer", label: "Tổng quan", icon: "dashboard", end: true },
+      { to: "/reviewer/profile", label: "Hồ sơ cá nhân", icon: "person", end: true }, // ✅ THÊM MỚI
       { to: "/reviewer/bidding", label: "Chọn bài (Bidding)", icon: "pan_tool", end: true },
       { to: "/reviewer/assignments", label: "Bài được phân công", icon: "assignment", end: true },
       { to: "/reviewer/coi", label: "Khai báo mâu thuẫn", icon: "gavel", end: true },
@@ -208,7 +210,6 @@ export default function Sidebar() {
   return (
     <SidebarShell>
       <RoleHeader icon={portalIcon} title={portalTitle} />
-
       <RoleSwitcher currentArea={currentArea} roles={roles} />
 
       <MenuNav items={menuItems} />

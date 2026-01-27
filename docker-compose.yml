@@ -306,6 +306,8 @@ services:
       SECRET_KEY: ${JWT_SECRET_KEY}
       ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+      INTERNAL_KEY: ${INTERNAL_KEY}
       
       SEED_ON_STARTUP: "true"
       ADMIN_EMAIL: admin@uth.edu.vn
