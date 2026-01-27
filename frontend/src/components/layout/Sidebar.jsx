@@ -113,6 +113,90 @@ const Sidebar = () => {
   }
 
   // =========================
+  // 1.5) SIDEBAR CHO CHAIR (MỚI)
+  // =========================
+  if (hasRole(ROLES.CHAIR) && location.pathname.startsWith("/chair")) {
+    const chairMenu = [
+      { to: "/chair", label: "Tổng quan", icon: "dashboard" },
+      { to: "/chair/conferences", label: "Danh sách hội nghị", icon: "event" },
+      { to: "/chair/conferences/create", label: "Tạo hội nghị", icon: "add_circle" },
+      { to: "/chair/tracks/create", label: "Tạo Track", icon: "add_circle" },
+      { to: "/chair/reviewers", label: "Quản lý Reviewer", icon: "group" },
+    ];
+
+    return (
+      <aside className="w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 h-screen hidden lg:flex flex-col sticky top-0 z-20">
+        <div className="p-4 flex flex-col gap-6 h-full">
+          
+          {/* Logo Chair */}
+          <div className="flex items-center gap-3 px-2 pt-2">
+            <div className="size-8 bg-rose-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-rose-200">
+              <span className="material-symbols-outlined text-xl">gavel</span>
+            </div>
+            <span className="text-lg font-black text-gray-900">Chair Portal</span>
+          </div>
+
+          {/* Profile */}
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+            <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center font-black text-rose-700 border border-rose-200">
+              {getInitials(user?.full_name || "Chair")}
+            </div>
+            <div className="flex flex-col overflow-hidden">
+              <h1 className="text-gray-900 text-sm font-bold truncate">
+                {user?.full_name || "Chair"}
+              </h1>
+              <p className="text-gray-500 text-xs font-medium truncate">
+                Chair
+              </p>
+            </div>
+          </div>
+
+          {/* Menu */}
+          <nav className="flex flex-col gap-1 flex-1 overflow-y-auto custom-scrollbar">
+            {chairMenu.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/chair"}
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+
+            <div className="my-2 border-t border-gray-100 mx-2"></div>
+            <NavLink
+              to="/"
+              className={linkInactive + " flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium"}
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                arrow_back
+              </span>
+              <span>Về trang chính</span>
+            </NavLink>
+          </nav>
+
+          {/* Logout */}
+          <div className="mt-auto">
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-rose-600 hover:bg-rose-50 font-bold transition-colors"
+            >
+              <span className="material-symbols-outlined">logout</span>
+              <span>Đăng xuất</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  // =========================
   // 2) SIDEBAR CHO ADMIN (✅ ĐÃ SỬA LẠI MÀU ĐỎ)
   // =========================
   if (hasRole(ROLES.ADMIN) && isAdminArea) {

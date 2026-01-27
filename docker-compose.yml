@@ -111,16 +111,12 @@ services:
       - ./backend/notification-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
-<<<<<<< HEAD
+
       CONFERENCE_SERVICE_URL: http://conference-service:8000
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-SECRET_KEY_CHANGE_ME}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
-      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-=======
+
 
       <<: *jwt_common
->>>>>>> cf0e6ac3f0419f02d43e96e61ebb8f07149004f1
+      
     networks:
       - confms-network
 
@@ -273,7 +269,7 @@ services:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: identity_db
     ports:
-      - "3306:3306"
+      - "3312:3306"
     volumes:
       - identity_db_data:/var/lib/mysql
     networks:

@@ -30,7 +30,7 @@ def invite_reviewer(
     }
 
     requests.post(
-    "http://notification-service:8000/notifications/reviewer-invite",
+    "http://notification-service:8000/api/notifications/reviewer-invite",
     json=payload,
     timeout=5
 )

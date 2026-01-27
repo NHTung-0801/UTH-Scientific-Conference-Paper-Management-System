@@ -9,10 +9,8 @@ pydantic-settings
 email-validator 
 
 fastapi-mail
-<<<<<<< HEAD
-httpx
-=======
+
+httpx 
 
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
->>>>>>> 11e66f2509ef8edadae99d1b1dbb2b4eeda1e041

@@ -69,7 +69,7 @@ def mark_message_read(db: Session, message_id: int, receiver_id: int):
         db.commit()
         db.refresh(msg)
     return msg
-<<<<<<< HEAD
+
 
 def create_reviewer_invitation(
     db: Session,
@@ -114,5 +114,17 @@ def get_invitation_by_token(db: Session, token: str):
         .filter(ReviewerInvitation.token == token)
         .first()
     )
-=======
->>>>>>> 11e66f2509ef8edadae99d1b1dbb2b4eeda1e041
+
+def delete_reviewer_invitation(db: Session, invitation_id: int) -> bool:
+    invitation = (
+        db.query(ReviewerInvitation)
+        .filter(ReviewerInvitation.id == invitation_id)
+        .first()
+    )
+
+    if not invitation:
+        return False
+
+    db.delete(invitation)
+    db.commit()
+    return True

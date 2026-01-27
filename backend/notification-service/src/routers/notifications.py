@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, status, HTTPException, Query
 from sqlalchemy.orm import Session
-<<<<<<< HEAD
+
 from src import database, schemas, crud
 from src.utils import email_utils 
 from typing import List
@@ -9,7 +9,7 @@ from src.config import settings
 from src.utils.email_utils import send_email_async
 from src.services.conference_client import get_conference
 from src.database import get_db
-=======
+
 from typing import List, Optional
 
 from .. import database, schemas, crud
@@ -17,7 +17,7 @@ from ..utils import email_utils
 
 # ✅ Auth deps
 from ..security.deps import get_current_payload, require_roles
->>>>>>> 11e66f2509ef8edadae99d1b1dbb2b4eeda1e041
+
 
 router = APIRouter(
     prefix="/api/notifications",   # ✅ chuẩn hóa /api
@@ -76,7 +76,7 @@ def send_notification(
         "detail": "Notification saved and email task started."
     }
 
-<<<<<<< HEAD
+
 @router.get("/reviewer-response")
 def reviewer_response(
     token: str = Query(...),
@@ -114,7 +114,7 @@ def get_reviewer_invitations(db: Session = Depends(get_db)):
     """
     return crud.get_all_reviewer_invitations(db)
 
-=======
+
 # =========================================================
 # 2) USER: xem inbox của tôi 
 # =========================================================
@@ -131,7 +131,7 @@ def get_my_inbox(
         raise HTTPException(status_code=401, detail="Token missing user_id")
 
     return crud.get_user_messages(db=db, user_id=user_id)
->>>>>>> 11e66f2509ef8edadae99d1b1dbb2b4eeda1e041
+
 
 # =========================================================
 # 3) USER: mark read (chỉ được mark message thuộc về mình)
@@ -149,7 +149,7 @@ def mark_as_read(
     msg = crud.mark_message_read(db=db, message_id=message_id, receiver_id=user_id)
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
-<<<<<<< HEAD
+    
     return {"status": "success", "is_read": True}
 
 
@@ -166,12 +166,12 @@ def invite_reviewer(
 
     # ================== 📌 BƯỚC 1 GÁN Ở ĐÂY ==================
     accept_url = (
-        f"http://127.0.0.1:8001/notifications/reviewer-response"
+        f"http://127.0.0.1:8001/api/notifications/reviewer-response"
         f"?token={token}&response=accept"
     )
 
     decline_url = (
-        f"http://127.0.0.1:8001/notifications/reviewer-response"
+        f"http://127.0.0.1:8001/api/notifications/reviewer-response"
         f"?token={token}&response=decline"
     )
 
@@ -238,16 +238,7 @@ def invite_reviewer(
     return {"message": "Invitation sent"}
 
 
-# Xem hộp thư
-@router.get("/{user_id}", response_model=List[schemas.MessageResponse])
-def get_my_inbox(
-    user_id: int,
-    db: Session = Depends(database.get_db)
-):
-    return crud.get_user_messages(db=db, user_id=user_id)
-=======
 
-    return {"status": "success", "is_read": True}
 
 # =========================================================
 # 4) ADMIN: xem tất cả inbox 
@@ -261,4 +252,26 @@ def admin_list_all(
     db: Session = Depends(database.get_db),
 ):
     return db.query(crud.models.Message).order_by(crud.models.Message.created_at.desc()).all()
->>>>>>> 11e66f2509ef8edadae99d1b1dbb2b4eeda1e041
+
+
+# =========================================================
+# 5) ADMIN / CHAIR: delete reviewer invitation (DELETE THẬT)
+# =========================================================
+@router.delete(
+    "/reviewer-invitations/{invitation_id}",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_roles(["ADMIN", "CHAIR"]))],
+)
+def delete_reviewer_invitation(
+    invitation_id: int,
+    db: Session = Depends(get_db),
+):
+    deleted = crud.delete_reviewer_invitation(db, invitation_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    return {
+        "message": "Reviewer invitation deleted successfully",
+        "id": invitation_id
+    }

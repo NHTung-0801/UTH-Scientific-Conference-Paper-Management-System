@@ -30,6 +30,15 @@ import DashboardOverview from "../pages/admin/DashboardOverview"; // ✅ Trang t
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
 import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
 
+//Chair page 
+import ConferenceListPage from "../pages/chair/conference/ConferenceListPage";
+import CreateConferencePage from "../pages/chair/conference/CreateConferencePage";
+import CreateTrackPage from "../pages/chair/tracks/CreateTrackPage";
+import ConferenceDetailPage from "../pages/chair/conference/ConferenceDetailPage";
+import ConferenceEditPage from "../pages/chair/conference/ConferenceEditPage";
+import TrackEditPage from "../pages/chair/tracks/TrackEditPage";
+import ReviewerManagementPage from "../pages/chair/ReviewerManagementPage";
+
 const AppRoutes = () => {
   return (
     <Routes>
@@ -60,6 +69,14 @@ const AppRoutes = () => {
         {/* CHAIR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
           <Route path="/chair" element={<ChairDashboard />} />
+          <Route path="/chair/conferences" element={<ConferenceListPage />} />
+          <Route path="/chair/conferences/create" element={<CreateConferencePage />}/>
+          <Route path="/chair/tracks/create" element={<CreateTrackPage />} />
+          <Route path="/chair/conferences/:id" element={<ConferenceDetailPage />} />
+          <Route path="/chair/conferences/:id/edit" element={<ConferenceEditPage />} />
+          <Route path="/chair/tracks/:id/edit" element={<TrackEditPage />} />
+          <Route path="/chair/reviewers" element={<ReviewerManagementPage />} />
+          
         </Route>
 
         {/* REVIEWER */}

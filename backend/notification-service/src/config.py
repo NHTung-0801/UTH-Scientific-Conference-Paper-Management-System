@@ -5,13 +5,10 @@ class Settings(BaseSettings):
     # 1. CẤU HÌNH DATABASE (MySQL)
     # =========================================================
     # Lưu ý: Đổi tên DB thành notification_db
-<<<<<<< HEAD
-    DATABASE_URL: str = "mysql+pymysql://root:@localhost:3306/notification_db"
-    
-=======
+
     DATABASE_URL: str = "mysql+pymysql://root:root@localhost:3308/notification_db"
 
->>>>>>> 67f27b38b47d6c1e41c52fce929e63da8c85e1c4
+
     # =========================================================
     # 2. CẤU HÌNH EMAIL (QUAN TRỌNG NHẤT)
     # =========================================================
