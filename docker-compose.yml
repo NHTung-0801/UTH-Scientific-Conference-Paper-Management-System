@@ -119,6 +119,7 @@ services:
       - ./backend/notification-service/.env
     environment:
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
+      INTERNAL_KEY: secret_123
       <<: *jwt_common
     networks:
       - confms-network
@@ -303,6 +304,8 @@ services:
       SECRET_KEY: ${JWT_SECRET_KEY}
       ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+      INTERNAL_KEY: secret_123
       
       SEED_ON_STARTUP: "true"
       ADMIN_EMAIL: admin@uth.edu.vn
