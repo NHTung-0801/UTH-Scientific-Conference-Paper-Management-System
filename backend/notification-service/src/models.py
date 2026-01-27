@@ -41,3 +41,9 @@ class EmailLog(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class NotificationPrefs(Base):
+    __tablename__ = "notification_prefs"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, unique=True, index=True, nullable=False)
+    deadline_reminder = Column(Boolean, default=True, nullable=False)
