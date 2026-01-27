@@ -7,3 +7,4 @@ pydantic-settings
 cryptography
 python-multipart
 python-jose[cryptography]
+redis>=5.0.0

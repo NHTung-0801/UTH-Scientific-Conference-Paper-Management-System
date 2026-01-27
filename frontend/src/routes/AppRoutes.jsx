@@ -29,6 +29,8 @@ import AddCoAuthor from "../pages/author/AddCoAuthor";
 import EditPaper from "../pages/author/EditPaper";
 import EditSubmissionAuthor from "../pages/author/EditSubmissionAuthor";
 import Notifications from "../pages/author/Notifications";
+import DiscoverConferences from "../pages/author/DiscoverConferences";
+import AuthorConferenceDetail from "../pages/author/AuthorConferenceDetail";
 
 import ChairDashboard from "../pages/chair/ChairDashboard";
 
@@ -79,9 +81,12 @@ const AppRoutes = () => {
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
           <Route path="/author" element={<AuthorDashboard />} />
           <Route path="/author/settings" element={<AccountSettings />} />
+          <Route path="/author/profile" element={<ProfilePage />} /> 
           <Route path="/author/submissions" element={<MySubmissions />} />
           <Route path="/author/submissions/new" element={<SubmitPaper />} />
           <Route path="/author/notifications" element={<Notifications />} />
+          <Route path="/author/conferences" element={<DiscoverConferences />} />
+          <Route path="/author/conferences/:id" element={<AuthorConferenceDetail />} />
           <Route path="/author/submissions/:id" element={<PaperDetail />} />
           <Route path="/author/submissions/:id/authors/new" element={<AddCoAuthor />} />
           <Route path="/author/submissions/:id/edit" element={<EditPaper />} />

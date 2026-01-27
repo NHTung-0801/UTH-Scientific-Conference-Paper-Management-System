@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.database import Base, engine
+from fastapi.staticfiles import StaticFiles
 
 # routers
 from src.conference.router import router as conference_router
@@ -31,7 +32,7 @@ def on_startup():
 app.include_router(conference_router) 
 app.include_router(track_router) 
 app.include_router(topic_router)
-
+app.mount("/static", StaticFiles(directory="src/static"), name="static")
 
 
 @app.get("/")
