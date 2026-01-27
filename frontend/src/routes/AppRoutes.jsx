@@ -2,11 +2,12 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import PrivateRoute from "./PrivateRoute";
 import { ROLES } from "../utils/constants";
+import AccountSettings from "../pages/common/AccountSettings";
+
 
 // Layouts
 import PublicLayout from "../layouts/PublicLayout";
 import DashboardLayout from "../layouts/DashboardLayout"; 
-// import AdminLayout from "../layouts/AdminLayout"; // ❌ BỎ file này nếu không dùng nữa
 
 // Public Pages
 import HomePage from "../pages/public/HomePage";
@@ -53,10 +54,12 @@ const AppRoutes = () => {
 
       {/* 2) DASHBOARD CHUNG CHO TẤT CẢ ROLE (BAO GỒM ADMIN) */}
       <Route element={<DashboardLayout />}>
-        
+
+             
         {/* AUTHOR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.AUTHOR]} />}>
           <Route path="/author" element={<AuthorDashboard />} />
+          <Route path="/author/settings" element={<AccountSettings />} />
           <Route path="/author/submissions" element={<MySubmissions />} />
           <Route path="/author/submissions/new" element={<SubmitPaper />} />
           <Route path="/author/notifications" element={<Notifications />} />
@@ -70,12 +73,14 @@ const AppRoutes = () => {
         {/* CHAIR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
           <Route path="/chair" element={<ChairDashboard />} />
+          <Route path="/chair/settings" element={<AccountSettings />} />
         </Route>
 
         {/* REVIEWER */}
         <Route path="/reviewer" element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
           <Route index element={<ReviewerDashboard />} />
           <Route path="assignments" element={<MyAssignments />} />
+          <Route path="settings" element={<AccountSettings />} />
           <Route path="assignments/:assignmentId" element={<AssignmentDetail />} />
           <Route path="coi" element={<MyCOI />} />
           <Route path="coi/new" element={<COINew />} />
@@ -89,10 +94,10 @@ const AppRoutes = () => {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<DashboardOverview />} />
             <Route path="users" element={<AdminDashboard />} />
+            <Route path="settings" element={<AccountSettings />} />
             
             {/* Các trang giữ chỗ */}
             <Route path="conferences" element={<div className="p-10 font-bold text-gray-500">Quản lý Hội nghị (Đang phát triển)</div>} />
-            <Route path="settings" element={<div className="p-10 font-bold text-gray-500">Cấu hình hệ thống (Đang phát triển)</div>} />
             <Route path="audit" element={<div className="p-10 font-bold text-gray-500">Nhật ký hệ thống (Đang phát triển)</div>} />
         </Route>
 
