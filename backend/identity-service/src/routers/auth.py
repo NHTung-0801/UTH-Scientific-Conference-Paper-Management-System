@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
@@ -14,6 +14,8 @@ from src.auth import (
     ALGORITHM,
     REFRESH_TOKEN_EXPIRE_DAYS
 )
+# [FIX] Chỉ cần một dòng import cho notification client
+from src.utils.notification_client import send_email_via_notification_service
 
 router = APIRouter(
     prefix="/api/auth",
@@ -23,6 +25,10 @@ router = APIRouter(
 # --- 1. API ĐĂNG KÝ (Register) ---
 @router.post("/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """
+    Đăng ký tài khoản mới. Trả về thông tin User bao gồm cả các trường
+    profile mới (mặc định sẽ là null hoặc mảng rỗng).
+    """
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -43,12 +49,12 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
 
     role_names = [role.role_name.upper() for role in user.roles]
 
-    # [CHANGE] Truyền thêm id=user.id để token có cả 'id' và 'user_id'
+    # Tạo Access Token chứa cả 'id' và 'user_id' để tương thích tốt nhất
     access_token = create_access_token(
         subject=user.email,
         user_id=user.id,
         roles=role_names,
-        id=user.id  # <--- THÊM DÒNG NÀY
+        id=user.id 
     )
 
     refresh_token = create_refresh_token(
@@ -67,7 +73,7 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
     }
 
 
-# --- 3. API REFRESH TOKEN (Rotate refresh token) ---
+# --- 3. API REFRESH TOKEN ---
 @router.post("/refresh", response_model=schemas.TokenResponse)
 def refresh(body: schemas.RefreshRequest, db: Session = Depends(get_db)):
     try:
@@ -94,12 +100,11 @@ def refresh(body: schemas.RefreshRequest, db: Session = Depends(get_db)):
 
     role_names = [r.role_name.upper() for r in user.roles]
 
-    # [CHANGE] Thêm id vào token mới khi refresh
     new_access = create_access_token(
         subject=user.email,
         user_id=user.id,
         roles=role_names,
-        id=user.id  # <--- THÊM DÒNG NÀY
+        id=user.id
     )
 
     crud.revoke_refresh_token(db, token_hash)
@@ -119,16 +124,13 @@ def refresh(body: schemas.RefreshRequest, db: Session = Depends(get_db)):
     }
 
 
-# --- 4. API ĐĂNG XUẤT (Revoke refresh token) ---
+# --- 4. API ĐĂNG XUẤT ---
 @router.post("/logout")
 def logout(body: schemas.LogoutRequest, db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token type")
 
     user_id = payload.get("user_id")
     if not user_id:
@@ -142,3 +144,70 @@ def logout(body: schemas.LogoutRequest, db: Session = Depends(get_db)):
     crud.revoke_refresh_token(db, token_hash)
 
     return {"message": "Logout successful"}
+
+
+# --- 5. QUÊN MẬT KHẨU ---
+@router.post("/forgot-password", summary="Step 1: Request reset token via email")
+def forgot_password(
+    request: schemas.ForgotPasswordRequest, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    token = crud.create_reset_token(db, request.email)
+    
+    if token:
+        user = crud.get_user_by_email(db, request.email)
+        if user:
+            email_subject = "[UTH-ConfMS] Mã xác nhận khôi phục mật khẩu"
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; max-width: 500px;">
+                <h2 style="color: #1173d4; text-align: center;">Yêu cầu đặt lại mật khẩu</h2>
+                <p>Mã xác thực (OTP) của bạn là:</p>
+                <div style="background-color: #f0f8ff; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                    <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1173d4;">{token}</span>
+                </div>
+                <p style="color: #666; font-size: 13px;">Mã này sẽ hết hạn sau 15 phút.</p>
+            </div>
+            """
+
+            background_tasks.add_task(
+                send_email_via_notification_service, 
+                to_email=request.email,
+                subject=email_subject, 
+                content=html_content,
+                receiver_id=user.id
+            )
+    
+    return {"message": "If this email is registered, you will receive an OTP via email."}
+
+
+# --- 6. ĐẶT LẠI MẬT KHẨU ---
+@router.post("/reset-password", summary="Step 2: Submit new password with token")
+def reset_password(
+    request: schemas.ResetPasswordRequest, 
+    db: Session = Depends(get_db)
+):
+    success = crud.reset_password(db, request.token, request.new_password)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid or expired reset token"
+        )
+    
+    return {"message": "Mật khẩu đã thay đổi thành công!"}
+
+
+# --- 7. XÁC THỰC OTP ---
+@router.post("/verify-otp")
+def verify_otp_endpoint(req: schemas.VerifyOtpRequest, db: Session = Depends(get_db)):
+    user = crud.get_user_by_email(db, req.email)
+    if not user:
+         raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.reset_token != req.otp:
+         raise HTTPException(status_code=400, detail="Invalid OTP")
+         
+    if user.reset_token_expires_at < datetime.utcnow():
+         raise HTTPException(status_code=400, detail="OTP Expired")
+         
+    return {"message": "OTP Valid", "token": req.otp}
