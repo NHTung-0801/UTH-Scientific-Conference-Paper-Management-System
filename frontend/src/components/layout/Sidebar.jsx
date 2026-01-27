@@ -1,9 +1,9 @@
 import React, { useMemo } from "react";
-import { NavLink, useLocation, matchPath, Link } from "react-router-dom";
+import { NavLink, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ROLES } from "../../utils/constants";
 
-// --- STYLE ---
+// --- STYLE GIỮ NGUYÊN TÔNG ROSE CỦA BẠN ---
 const linkBase =
   "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors cursor-pointer";
 const linkInactive =
@@ -11,7 +11,7 @@ const linkInactive =
 const linkActive =
   "bg-rose-50 text-rose-700 border border-rose-100 font-bold shadow-sm";
 
-// Header hiển thị Role hiện tại (Admin / Author / Reviewer)
+// Header hiển thị Role (GIỮ NGUYÊN CŨ)
 function RoleHeader({ icon, title }) {
   return (
     <div className="flex items-center gap-3 px-2 pt-2 mb-4">
@@ -26,7 +26,7 @@ function RoleHeader({ icon, title }) {
   );
 }
 
-// Khung Sidebar
+// Khung Sidebar (GIỮ NGUYÊN CŨ)
 function SidebarShell({ children }) {
   return (
     <aside className="w-72 bg-white dark:bg-gray-900 border-r border-slate-200 dark:border-gray-800 hidden lg:flex flex-col sticky top-16 h-[calc(100vh-64px)] overflow-y-auto">
@@ -35,12 +35,11 @@ function SidebarShell({ children }) {
   );
 }
 
-// Menu Nav Component
+// Menu Nav Component (GIỮ NGUYÊN CŨ)
 function MenuNav({ items }) {
   const location = useLocation();
 
   const isItemActive = (item) => {
-    // Logic active chính xác hơn: so sánh prefix
     if (item.exact) return location.pathname === item.to;
     return location.pathname.startsWith(item.to);
   };
@@ -65,11 +64,8 @@ function MenuNav({ items }) {
   );
 }
 
-// Nút chuyển đổi Role (Hiển thị nếu user có quyền khác ngoài quyền hiện tại)
+// Nút chuyển đổi Role (GIỮ NGUYÊN CŨ)
 function RoleSwitcher({ currentArea, roles }) {
-  // Logic: Nếu đang ở Admin mà user có quyền Author -> Hiện nút "Về trang Tác giả"
-  // Đây là ví dụ đơn giản, bạn có thể custom thêm
-  
   if (currentArea === "ADMIN" && roles.includes(ROLES.AUTHOR)) {
     return (
       <div className="mb-2 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100">
@@ -103,17 +99,16 @@ export default function Sidebar() {
 
   const roles = useMemo(() => {
     return Array.isArray(user?.roles)
-      ? user.roles.map((r) => String(r.role_name || r).toUpperCase()) // Fix: check structure role object or string
+      ? user.roles.map((r) => String(r.role_name || r).toUpperCase())
       : [];
   }, [user?.roles]);
 
   const hasRole = (role) => roles.includes(role);
 
-  // Xác định khu vực hiện tại dựa trên URL
   const isAuthorArea = location.pathname.startsWith("/author");
-  const isChairArea = location.pathname.startsWith("/chair");
   const isAdminArea = location.pathname.startsWith("/admin");
   const isReviewerArea = location.pathname.startsWith("/reviewer");
+  const isChairArea = location.pathname.startsWith("/chair");
 
   let menuItems = [];
   let portalTitle = "Trang chủ";
@@ -121,7 +116,7 @@ export default function Sidebar() {
   let currentArea = "HOME";
 
   // =========================
-  // 1. ADMIN AREA
+  // 1. ADMIN AREA (Thêm Hồ sơ cá nhân)
   // =========================
   if (hasRole(ROLES.ADMIN) && isAdminArea) {
     currentArea = "ADMIN";
@@ -129,6 +124,7 @@ export default function Sidebar() {
     portalIcon = "admin_panel_settings";
     menuItems = [
       { to: "/admin/dashboard", label: "Tổng quan", icon: "grid_view", exact: true },
+      { to: "/admin/profile", label: "Hồ sơ cá nhân", icon: "person" }, // ✅ THÊM MỚI
       { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" },
       { to: "/admin/conferences", label: "Quản lý Hội nghị", icon: "calendar_month" },
       { to: "/admin/settings", label: "Cấu hình hệ thống", icon: "settings" },
@@ -136,7 +132,7 @@ export default function Sidebar() {
     ];
   }
   // =========================
-  // 2. AUTHOR AREA
+  // 2. AUTHOR AREA (Thêm Hồ sơ cá nhân)
   // =========================
   else if (hasRole(ROLES.AUTHOR) && isAuthorArea) {
     currentArea = "AUTHOR";
@@ -144,6 +140,7 @@ export default function Sidebar() {
     portalIcon = "school";
     menuItems = [
       { to: "/author", label: "Dashboard", icon: "home", exact: true },
+      { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person" }, // ✅ THÊM MỚI
       { to: "/author/submissions", label: "Bài nộp của tôi", icon: "article" },
       { to: "/author/submissions/new", label: "Nộp bài mới", icon: "cloud_upload" },
       { to: "/author/notifications", label: "Thông báo", icon: "notifications" },
@@ -151,7 +148,7 @@ export default function Sidebar() {
     ];
   }
   // =========================
-  // 3. REVIEWER AREA
+  // 3. REVIEWER AREA (Thêm Hồ sơ cá nhân)
   // =========================
   else if ((hasRole(ROLES.REVIEWER) || hasRole(ROLES.ADMIN)) && isReviewerArea) {
     currentArea = "REVIEWER";
@@ -159,6 +156,7 @@ export default function Sidebar() {
     portalIcon = "rate_review";
     menuItems = [
       { to: "/reviewer", label: "Tổng quan", icon: "dashboard", exact: true },
+      { to: "/reviewer/profile", label: "Hồ sơ cá nhân", icon: "person" }, // ✅ THÊM MỚI
       { to: "/reviewer/bidding", label: "Chọn bài (Bidding)", icon: "pan_tool" },
       { to: "/reviewer/assignments", label: "Bài được phân công", icon: "assignment" },
       { to: "/reviewer/coi", label: "Khai báo mâu thuẫn", icon: "gavel" },
@@ -177,23 +175,14 @@ export default function Sidebar() {
       { to: "/chair/review-assign", label: "Phân công phản biện", icon: "assignment_ind" },
     ];
   }
-  // =========================
-  // 5. FALLBACK (Home)
-  // =========================
   else {
-    menuItems = [
-      { to: "/", label: "Trang chủ", icon: "home", exact: true },
-    ];
-    if (hasRole(ROLES.ADMIN)) menuItems.push({ to: "/admin", label: "Vào trang Admin", icon: "admin_panel_settings" });
-    if (hasRole(ROLES.AUTHOR)) menuItems.push({ to: "/author", label: "Vào trang Tác giả", icon: "school" });
-    if (hasRole(ROLES.REVIEWER)) menuItems.push({ to: "/reviewer", label: "Vào trang Phản biện", icon: "rate_review" });
+    menuItems = [{ to: "/", label: "Trang chủ", icon: "home", exact: true }];
   }
 
   return (
     <SidebarShell>
       <RoleHeader icon={portalIcon} title={portalTitle} />
       
-      {/* Switcher giúp Admin nhảy qua lại Author dễ dàng */}
       <RoleSwitcher currentArea={currentArea} roles={roles} />
 
       <MenuNav items={menuItems} />
