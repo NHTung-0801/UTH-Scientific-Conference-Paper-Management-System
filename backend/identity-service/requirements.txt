@@ -9,3 +9,4 @@ passlib[bcrypt]
 bcrypt==3.2.0
 pydantic[email]
 httpx
+redis>=5.0.0

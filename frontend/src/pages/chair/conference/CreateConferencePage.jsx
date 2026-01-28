@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import conferenceApi from "../../../api/conferenceApi";
 
 const CreateConferencePage = () => {
-
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
@@ -17,36 +16,29 @@ const CreateConferencePage = () => {
 
   const [logo, setLogo] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // ✅ FIX: dùng setLogo thay vì setLogoFile
   const handleLogoChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    setLogoFile(file);
+    setLogo(file);
     setLogoPreview(URL.createObjectURL(file));
-  };
-
-  const buildDateTime = (date, time) => {
-    if (!date || !time) return null;
-    return `${date} ${time}`;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (isSubmitting) return;
 
     if (!form.startDate || !form.startTime || !form.endDate || !form.endTime) {
-    alert("Vui lòng nhập đầy đủ thời gian");
-    return;
+      alert("Vui lòng nhập đầy đủ thời gian");
+      return;
     }
 
     setIsSubmitting(true);
@@ -54,7 +46,7 @@ const CreateConferencePage = () => {
     try {
       await conferenceApi.createConference({
         ...form,
-        logo,
+        logo, // ✅ gửi File lên backend qua FormData (conferenceApi đã xử lý)
       });
 
       alert("✅ Tạo hội nghị thành công");
@@ -65,27 +57,23 @@ const CreateConferencePage = () => {
     } finally {
       setIsSubmitting(false);
     }
-
   };
 
   const handleCancel = () => {
-  const confirmCancel = window.confirm(
-    "Bạn có muốn lưu hội nghị trước khi rời đi không?\n\nNhấn OK để tiếp tục chỉnh sửa.\nNhấn Cancel để hủy bỏ."
-  );
+    const confirmCancel = window.confirm(
+      "Bạn có muốn lưu hội nghị trước khi rời đi không?\n\nNhấn OK để tiếp tục chỉnh sửa.\nNhấn Cancel để hủy bỏ."
+    );
 
-  if (!confirmCancel) {
-    navigate("/chair"); // quay về dashboard chair (route CÓ THẬT)
-  }
-};
-
+    if (!confirmCancel) {
+      navigate("/chair");
+    }
+  };
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
       {/* Heading */}
       <div className="mb-8">
-        <h2 className="text-2xl font-black mb-6">
-          Tạo Hội nghị mới
-        </h2>
+        <h2 className="text-2xl font-black mb-6">Tạo Hội nghị mới</h2>
         <p className="text-slate-700 mt-2">
           Điền thông tin chi tiết để thiết lập hội nghị khoa học mới trên hệ thống.
         </p>
@@ -96,9 +84,7 @@ const CreateConferencePage = () => {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
           <div className="px-6 py-4 border-b bg-slate-50">
             <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
-              <span className="material-symbols-outlined text-primary">
-                info
-              </span>
+              <span className="material-symbols-outlined text-primary">info</span>
               Thông tin cơ bản
             </h3>
           </div>
@@ -146,13 +132,7 @@ const CreateConferencePage = () => {
                   accept="image/*"
                   className="hidden"
                   id="logoUpload"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      setLogo(file);
-                      setLogoPreview(URL.createObjectURL(file));
-                    }
-                  }}
+                  onChange={handleLogoChange} // ✅ dùng handler đã fix
                 />
 
                 <span className="material-symbols-outlined text-primary text-3xl">
@@ -161,11 +141,9 @@ const CreateConferencePage = () => {
                 <p className="text-sm font-semibold text-slate-900">
                   Nhấp để tải logo hội nghị
                 </p>
-                <p className="text-xs text-slate-600">
-                  PNG, JPG, SVG (tối đa 5MB)
-                </p>
+                <p className="text-xs text-slate-600">PNG, JPG, SVG (tối đa 5MB)</p>
               </label>
-                  
+
               <div className="flex items-center justify-center">
                 <div className="w-40 h-40 bg-slate-100 rounded-xl flex items-center justify-center border overflow-hidden">
                   {logoPreview ? (

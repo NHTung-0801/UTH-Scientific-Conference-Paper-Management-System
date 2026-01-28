@@ -9,6 +9,7 @@ pydantic-settings
 email-validator 
 
 fastapi-mail
+redis>=5.0.0
 
 httpx 
 

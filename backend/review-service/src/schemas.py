@@ -127,6 +127,22 @@ class DiscussionOut(BaseModel):
     class Config:
         from_attributes = True
 
+class DiscussionViewOut(BaseModel):
+    id: int
+    paper_id: int
+    sender_id: Optional[int] = None
+    content: str
+    sent_at: datetime
+    parent_id: Optional[int] = None
+
+    sender_role: str
+    sender_name: str
+    is_me: bool
+
+    class Config:
+        from_attributes = True
+
+
 class BidType(str, Enum):
     YES = "YES"
     MAYBE = "MAYBE"

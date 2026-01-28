@@ -25,7 +25,7 @@ from src.security.deps import require_roles
 # =========================
 # ROUTER
 # =========================
-router = APIRouter(tags=["Conferences"])
+router = APIRouter(prefix="/api/conferences", tags=["Conferences"])
 
 # =========================
 # STATIC / UPLOAD CONFIG
