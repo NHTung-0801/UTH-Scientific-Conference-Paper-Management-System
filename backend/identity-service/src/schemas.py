@@ -75,3 +75,6 @@ class UserUpdate(BaseModel):
 class VerifyOtpRequest(BaseModel):
     email: str
     otp: str
+
+class FirebaseLoginRequest(BaseModel):
+    token: str

@@ -1,20 +1,25 @@
+# backend/identity-service/src/routers/auth.py
+import os
+import time  # [FIX] Import thư viện time
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+import firebase_admin
+from firebase_admin import auth as firebase_auth
 
 from src.database import get_db
-from src import schemas, crud
+from src import schemas, crud, models
 from src.auth import (
     verify_password,
     create_access_token,
     create_refresh_token,
     hash_token,
+    get_password_hash,
     SECRET_KEY,
     ALGORITHM,
     REFRESH_TOKEN_EXPIRE_DAYS
 )
-# [FIX] Chỉ cần một dòng import cho notification client
 from src.utils.notification_client import send_email_via_notification_service
 
 router = APIRouter(
@@ -25,10 +30,6 @@ router = APIRouter(
 # --- 1. API ĐĂNG KÝ (Register) ---
 @router.post("/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """
-    Đăng ký tài khoản mới. Trả về thông tin User bao gồm cả các trường
-    profile mới (mặc định sẽ là null hoặc mảng rỗng).
-    """
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -49,7 +50,7 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
 
     role_names = [role.role_name.upper() for role in user.roles]
 
-    # Tạo Access Token chứa cả 'id' và 'user_id' để tương thích tốt nhất
+    # Tạo Access Token
     access_token = create_access_token(
         subject=user.email,
         user_id=user.id,
@@ -62,6 +63,85 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
         user_id=user.id,
     )
 
+    refresh_hash = hash_token(refresh_token)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud.save_refresh_token(db, user_id=user.id, token_hash=refresh_hash, expires_at=expires_at)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
+
+
+# --- [MỚI] 2.1 API ĐĂNG NHẬP BẰNG FIREBASE ---
+@router.post("/login/firebase", response_model=schemas.TokenResponse)
+def login_with_firebase(
+    request: schemas.FirebaseLoginRequest, 
+    db: Session = Depends(get_db)
+):
+    # [FIX QUAN TRỌNG] Ngủ 3 giây để đồng hồ Docker kịp đuổi theo đồng hồ Google
+    # Khắc phục lỗi "Token used too early"
+    time.sleep(3)
+
+    try:
+        # 1. Xác thực Token với Firebase
+        decoded_token = firebase_auth.verify_id_token(request.token)
+        email = decoded_token.get('email')
+        name = decoded_token.get('name', 'Firebase User')
+        
+        if not email:
+             raise HTTPException(status_code=400, detail="Google account must have an email")
+
+    except Exception as e:
+        print(f"Firebase Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid Firebase Token"
+        )
+
+    # 2. Tìm User trong DB
+    user = crud.get_user_by_email(db, email=email)
+
+    # 3. Nếu chưa có user -> Tạo mới (Auto-registration)
+    if not user:
+        print(f"--> Creating new user from Firebase: {email}")
+        
+        # Tìm role AUTHOR
+        author_role = db.query(models.Role).filter(models.Role.role_name == "AUTHOR").first()
+        
+        user = models.User(
+            email=email,
+            full_name=name,
+            password_hash=get_password_hash("FIREBASE_OAUTH_LOGIN"), # Mật khẩu ngẫu nhiên
+            is_active=True
+        )
+        if author_role:
+             user.roles.append(author_role)
+             
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="User is inactive")
+
+    # 4. Cấp Token (Logic giống hệt hàm login thường)
+    role_names = [role.role_name.upper() for role in user.roles]
+
+    access_token = create_access_token(
+        subject=user.email,
+        user_id=user.id,
+        roles=role_names,
+        id=user.id 
+    )
+
+    refresh_token = create_refresh_token(
+        subject=user.email,
+        user_id=user.id,
+    )
+
+    # Lưu refresh token vào DB
     refresh_hash = hash_token(refresh_token)
     expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     crud.save_refresh_token(db, user_id=user.id, token_hash=refresh_hash, expires_at=expires_at)
