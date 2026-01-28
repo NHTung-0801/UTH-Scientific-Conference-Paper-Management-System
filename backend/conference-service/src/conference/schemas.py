@@ -31,8 +31,4 @@ class ConferenceDeleteResult(BaseModel):
     message: str
     deleted_conference: ConferenceResponse
 
-class Submission(Base):
-    id
-    conference_id
-    author_name
-    author_email
+

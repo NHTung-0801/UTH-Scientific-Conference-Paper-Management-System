@@ -62,18 +62,20 @@ useEffect(() => {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Conference */}
         <div>
-          <label className="font-semibold text-sm">Chọn hội nghị</label>
+          <label className="font-semibold text-sm">Chọn hội nghị  </label>
           <select
             name="conferenceId"
             value={form.conferenceId}
             onChange={handleChange}
             required
-            className="px-4 py-2.5 rounded-lg border focus:ring-2 focus:ring-primary"
+            className="px-4 py-2.5 rounded-lg border text-slate-900
+           focus:border-primary focus:ring-2 focus:ring-primary"
             >
             <option value="">-- Chọn hội nghị --</option>
 
             {conferences.map((conf) => (
-                <option key={conf.id} value={conf.id}>
+                <option key={conf.id} value={conf.id}
+                className="text-slate-900">
                 {conf.name}
                 </option>
             ))}
@@ -88,7 +90,11 @@ useEffect(() => {
             value={form.name}
             onChange={handleChange}
             required
-            className="w-full mt-1 px-4 py-2 border rounded-lg"
+            className="px-4 py-2.5 rounded-lg border 
+                      text-black bg-white 
+                      placeholder-slate-400
+                      focus:ring-2 focus:ring-primary 
+                      focus:outline-none resize-none"
             placeholder="Ví dụ: Artificial Intelligence"
           />
         </div>
@@ -101,7 +107,13 @@ useEffect(() => {
             value={form.description}
             onChange={handleChange}
             rows={4}
-            className="w-full mt-1 px-4 py-2 border rounded-lg"
+            className="w-full mt-1 px-4 py-2 rounded-lg border
+                      text-black bg-white
+                      placeholder-slate-400
+                      focus:ring-2 focus:ring-primary
+                      focus:outline-none
+                      resize-none
+                    "
           />
         </div>
 

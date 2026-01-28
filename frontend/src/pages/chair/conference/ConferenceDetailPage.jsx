@@ -90,57 +90,65 @@ useEffect(() => {
         />
       )}
 
-      <p className="text-slate-600 mb-8">{conference.description}</p>
+      <p className="text-white mb-8">{conference.description}</p>
         {/* Thời gian hội nghị */}
         <div className="mb-10 p-5 border rounded-xl bg-slate-50">
-          <h3 className="font-bold mb-4">Thời gian hội nghị</h3>
+          <h3 className="font-bold mb-4 text-black">Thời gian hội nghị</h3>
 
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div>
-              <label className="text-sm font-medium">Ngày bắt đầu</label>
+              <label className="text-sm font-medium text-black">Ngày bắt đầu</label>
               <input
                 type="date"
                 value={form.start_date}
                 onChange={(e) =>
                   setForm({ ...form, start_date: e.target.value })
                 }
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded-lg px-3 py-2 
+                          text-black bg-white
+                          focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             <div>
-              <label className="text-sm font-medium">Giờ bắt đầu</label>
+              <label className="text-sm font-medium text-black">Giờ bắt đầu</label>
               <input
                 type="time"
                 value={form.start_time}
                 onChange={(e) =>
                   setForm({ ...form, start_time: e.target.value })
                 }
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded-lg px-3 py-2 
+                          text-black bg-white
+                          focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             <div>
-              <label className="text-sm font-medium">Ngày kết thúc</label>
+              <label className="text-sm font-medium text-black">Ngày kết thúc</label>
               <input
                 type="date"
                 value={form.end_date}
                 onChange={(e) =>
                   setForm({ ...form, end_date: e.target.value })
                 }
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded-lg px-3 py-2 
+                          text-black bg-white
+                          focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             <div>
-              <label className="text-sm font-medium">Giờ kết thúc</label>
+              <label className="text-sm font-medium text-black">Giờ kết thúc</label>
               <input
                 type="time"
                 value={form.end_time}
                 onChange={(e) =>
                   setForm({ ...form, end_time: e.target.value })
                 }
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded-lg px-3 py-2 
+                          text-black bg-white
+                          focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
           </div>

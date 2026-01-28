@@ -13,15 +13,34 @@ const TrackEditPage = () => {
 
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    trackApi.getTrackById(id).then((res) => {
+useEffect(() => {
+  let mounted = true;
+
+  trackApi.getTrackById(id)
+    .then((res) => {
+      const track = res?.data || res;
+
+      if (!track || !mounted) return;
+
       setForm({
-        name: res.name,
-        description: res.description || "",
+        name: track.name || "",
+        description: track.description || "",
       });
-      setLoading(false);
+    })
+    .catch((err) => {
+      console.error("Load track failed:", err);
+      alert("Không tải được Track");
+    })
+    .finally(() => {
+      if (mounted) setLoading(false); // 🔥 QUAN TRỌNG
     });
-  }, [id]);
+
+  return () => {
+    mounted = false;
+  };
+}, [id]);
+
+
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,7 +67,11 @@ const TrackEditPage = () => {
             name="name"
             value={form.name}
             onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg"
+            className="px-4 py-2.5 rounded-lg border 
+                      text-black bg-white 
+                      placeholder-slate-400
+                      focus:ring-2 focus:ring-primary 
+                      focus:outline-none resize-none"
             required
           />
         </div>
@@ -60,7 +83,13 @@ const TrackEditPage = () => {
             value={form.description}
             onChange={handleChange}
             rows={4}
-            className="w-full px-4 py-2 border rounded-lg"
+            className="w-full mt-1 px-4 py-2 rounded-lg border
+                      text-black bg-white
+                      placeholder-slate-400
+                      focus:ring-2 focus:ring-primary
+                      focus:outline-none
+                      resize-none
+                    "
           />
         </div>
 

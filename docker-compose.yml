@@ -122,13 +122,12 @@ services:
       INTERNAL_KEY: ${INTERNAL_KEY}
       SECRET_KEY: ${JWT_SECRET_KEY}
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
-<<<<<<< HEAD
+
 
       CONFERENCE_SERVICE_URL: http://conference-service:8000
 
 
-=======
->>>>>>> 759202c549372e4218642f44358647d121691d56
+
       <<: *jwt_common
       
     networks:

@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from sqlalchemy.orm import Session
 from src.database import get_db
 from src.conference.models import Conference
-<<<<<<< HEAD
+
 from datetime import time, date, datetime
 from uuid import uuid4
-=======
+
 from src.conference.schemas import ConferenceDeleteResult
 from sqlalchemy import text
 from datetime import time , date, datetime
@@ -17,7 +17,7 @@ from src.conference.schemas import (
     ConferenceUpdateResult
 )
 from fastapi import UploadFile, File, Form
->>>>>>> 759202c549372e4218642f44358647d121691d56
+
 import os, shutil
 
 from src.security.deps import require_roles
@@ -75,10 +75,7 @@ def get_conference_status(conference: Conference) -> str:
         return "ended"
     return "ongoing"
 
-<<<<<<< HEAD
-=======
-router = APIRouter(prefix="/conferences", tags=["Conferences"])
->>>>>>> 759202c549372e4218642f44358647d121691d56
+
 
 
 

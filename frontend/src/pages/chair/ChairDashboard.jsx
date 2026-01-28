@@ -106,7 +106,7 @@ export default function ChairDashboard() {
             {/* Conferences */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
               <div className="px-6 py-5 border-b flex justify-between">
-                <h3 className="font-bold text-lg">
+                <h3 className="font-bold text-lg text-slate-900">
                   Hội nghị gần đây
                 </h3>
                 <button
@@ -164,7 +164,7 @@ export default function ChairDashboard() {
             {/* Notifications – UI only */}
             <div className="bg-white rounded-2xl border p-6">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">
+                <h3 className="font-bold text-lg text-slate-900">
                   📣 Thông báo
                 </h3>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
@@ -174,7 +174,7 @@ export default function ChairDashboard() {
 
               <div className="space-y-3">
                 <div className="p-4 rounded-xl border bg-slate-50 border-slate-200">
-                  <div className="font-bold text-sm">
+                  <div className="font-bold text-lg text-slate-900">
                     Hệ thống đang hoàn thiện
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
@@ -183,7 +183,7 @@ export default function ChairDashboard() {
                 </div>
 
                 <div className="p-4 rounded-xl border bg-slate-50 border-slate-200">
-                  <div className="font-bold text-sm">
+                  <div className="font-bold text-lg text-slate-900">
                     Quản lý hội nghị dễ dàng
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
@@ -197,7 +197,7 @@ export default function ChairDashboard() {
           {/* Right */}
           <div className="space-y-8">
             <div className="bg-white rounded-2xl border p-6">
-              <h3 className="font-bold text-lg mb-4">
+              <h3 className="font-bold text-lg mb-4 text-slate-900">
                 Mốc quan trọng
               </h3>
               <div className="text-sm text-slate-600 space-y-3">
@@ -252,10 +252,10 @@ function StatCard({ title, value, badge, tone }) {
   };
   return (
     <div className="bg-white rounded-2xl p-6 border">
-      <p className="text-slate-500 text-sm font-semibold uppercase">
+      <p className="text-slate-900 text-sm font-semibold uppercase">
         {title}
       </p>
-      <p className="text-4xl font-black mt-1">
+      <p className="text-4xl font-black mt-1 text-slate-900">
         {String(value).padStart(2, "0")}
       </p>
       <div

@@ -14,10 +14,7 @@ import os
 import shutil
 from src.security.deps import require_roles
 
-router = APIRouter(
-    prefix="/tracks",
-    tags=["Tracks"]
-)
+router = APIRouter(tags=["Tracks"])
 
 # ========================
 # CREATE TRACK

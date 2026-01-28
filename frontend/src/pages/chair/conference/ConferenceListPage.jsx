@@ -101,8 +101,7 @@ const formatDateTime = (value) => {
         value={keyword}
         onChange={(e) => setKeyword(e.target.value)}
         placeholder="Tìm theo ID hoặc tên hội nghị..."
-        className="mb-6 px-4 py-2 w-full md:w-96 border rounded-lg"
-      />
+        className="mb-6 px-4 py-2 w-full md:w-96 border rounded-lgtext-black bg-whiteplaceholder-slate-400focus:ring-2 focus:ring-primaryfocus:outline-none"/>
 
       {/* Filters */}
       <div className="flex gap-3 mb-8">
@@ -115,11 +114,13 @@ const formatDateTime = (value) => {
           <button
             key={item.key}
             onClick={() => setFilter(item.key)}
-            className={`px-4 py-2 rounded-full text-sm font-medium ${
-              filter === item.key
-                ? "bg-primary text-white"
-                : "bg-white border hover:border-primary/50"
-            }`}
+            className={`px-4 py-2 rounded-full text-sm font-semibold transition
+              ${
+                filter === item.key
+                  ? "bg-primary text-white border border-primary"
+                  : "bg-white text-slate-900 border border-slate-400 hover:border-slate-700"
+              }`}
+
           >
             {item.label}
           </button>
@@ -187,7 +188,7 @@ const formatDateTime = (value) => {
 
                 <h3
                   onClick={() => navigate(`/chair/conferences/${conf.id}`)}
-                  className="font-bold text-lg mt-2 cursor-pointer"
+                  className="font-bold text-lg mt-2 cursor-pointer text-slate-900 hover:underline"
                 >
                   {conf.name}
                 </h3>

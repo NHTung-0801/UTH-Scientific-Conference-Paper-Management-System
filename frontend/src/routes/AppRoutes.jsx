@@ -101,7 +101,7 @@ const AppRoutes = () => {
         {/* CHAIR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
           <Route path="/chair" element={<ChairDashboard />} />
-<<<<<<< HEAD
+          
           <Route path="/chair/conferences" element={<ConferenceListPage />} />
           <Route path="/chair/conferences/create" element={<CreateConferencePage />}/>
           <Route path="/chair/tracks/create" element={<CreateTrackPage />} />
@@ -109,10 +109,9 @@ const AppRoutes = () => {
           <Route path="/chair/conferences/:id/edit" element={<ConferenceEditPage />} />
           <Route path="/chair/tracks/:id/edit" element={<TrackEditPage />} />
           <Route path="/chair/reviewers" element={<ReviewerManagementPage />} />
-          
-=======
+        
           <Route path="/chair/settings" element={<AccountSettings />} />
->>>>>>> 759202c549372e4218642f44358647d121691d56
+
         </Route>
 
         {/* REVIEWER */}

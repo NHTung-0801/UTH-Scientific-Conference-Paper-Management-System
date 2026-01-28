@@ -47,7 +47,7 @@ const handleSubmit = async () => {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white w-[420px] rounded-2xl p-6 space-y-4">
-        <h3 className="text-xl font-bold">Mời Reviewer</h3>
+        <h3 className="text-3xl font-black text-slate-900">Mời Reviewer</h3>
 
         <input
           placeholder="Email reviewer"

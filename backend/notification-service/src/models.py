@@ -42,7 +42,7 @@ class EmailLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-<<<<<<< HEAD
+
 class InvitationStatus(str, enum.Enum):
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
@@ -59,10 +59,10 @@ class ReviewerInvitation(Base):
     description = Column(Text)
     status = Column(Enum(InvitationStatus), default=InvitationStatus.PENDING)
     token = Column(String(255))
-=======
+
 class NotificationPrefs(Base):
     __tablename__ = "notification_prefs"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, unique=True, index=True, nullable=False)
     deadline_reminder = Column(Boolean, default=True, nullable=False)
->>>>>>> 759202c549372e4218642f44358647d121691d56
+

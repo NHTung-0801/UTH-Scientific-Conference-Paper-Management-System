@@ -41,7 +41,12 @@ const ConferenceEditPage = () => {
           name="name"
           value={form.name}
           onChange={handleChange}
-          className="w-full border px-4 py-2 rounded-lg"
+          className="w-full px-4 py-2 rounded-lg border
+                    text-black bg-white
+                    placeholder-slate-400
+                    focus:ring-2 focus:ring-primary
+                    focus:outline-none
+                  "
           placeholder="Tên hội nghị"
           required
         />
@@ -51,7 +56,13 @@ const ConferenceEditPage = () => {
           value={form.description}
           onChange={handleChange}
           rows={4}
-          className="w-full border px-4 py-2 rounded-lg"
+          className="w-full px-4 py-2 rounded-lg border
+                    text-black bg-white
+                    placeholder-slate-400
+                    focus:ring-2 focus:ring-primary
+                    focus:outline-none
+                    resize-none
+                  "
           placeholder="Mô tả"
         />
 

@@ -27,6 +27,14 @@ router = APIRouter(
 )
 INTERNAL_KEY = os.getenv("INTERNAL_KEY", "")
 
+from ..security.deps import get_current_payload, require_roles
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(["AUTHOR", "REVIEWER", "CHAIR", "ADMIN"]))],
+)
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def send_notification(
     req: schemas.NotificationRequest,
@@ -145,7 +153,7 @@ def mark_as_read(
         raise HTTPException(status_code=404, detail="Message not found")
     
     return {"status": "success", "is_read": True}
-<<<<<<< HEAD
+
 
 
 @router.post("/reviewer-invite")
@@ -271,5 +279,5 @@ def delete_reviewer_invitation(
         "message": "Reviewer invitation deleted successfully",
         "id": invitation_id
     }
-=======
->>>>>>> 759202c549372e4218642f44358647d121691d56
+
+

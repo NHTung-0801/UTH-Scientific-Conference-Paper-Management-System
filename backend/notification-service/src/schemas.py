@@ -54,10 +54,4 @@ class ReviewerInvitationResponse(BaseModel):
     status: str
 
     model_config = ConfigDict(from_attributes=True)
-
-class NotificationUserSummary(BaseModel):
-    receiver_email: str
-    receiver_name: Optional[str]
-    total_messages: int
-
-    model_config = ConfigDict(from_attributes=True)
+    

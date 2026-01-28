@@ -83,10 +83,10 @@ const CreateConferencePage = () => {
     <div className="p-8 max-w-5xl mx-auto">
       {/* Heading */}
       <div className="mb-8">
-        <h2 className="text-3xl font-black tracking-tight">
+        <h2 className="text-2xl font-black mb-6">
           Tạo Hội nghị mới
         </h2>
-        <p className="text-slate-500 mt-2">
+        <p className="text-slate-700 mt-2">
           Điền thông tin chi tiết để thiết lập hội nghị khoa học mới trên hệ thống.
         </p>
       </div>
@@ -95,7 +95,7 @@ const CreateConferencePage = () => {
         {/* Thông tin cơ bản */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
           <div className="px-6 py-4 border-b bg-slate-50">
-            <h3 className="text-lg font-bold flex items-center gap-2">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <span className="material-symbols-outlined text-primary">
                 info
               </span>
@@ -105,27 +105,35 @@ const CreateConferencePage = () => {
 
           <div className="p-6 space-y-6">
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold">
+              <label className="text-sm font-semibold text-slate-900">
                 Tên hội nghị <span className="text-red-500">*</span>
               </label>
               <input
                 name="name"
                 value={form.name}
                 onChange={handleChange}
-                className="px-4 py-2.5 rounded-lg border focus:ring-2 focus:ring-primary"
+                className="px-4 py-2.5 rounded-lg border 
+                          text-black bg-white 
+                          placeholder-slate-400
+                          focus:ring-2 focus:ring-primary 
+                          focus:outline-none"
                 placeholder="Ví dụ: Hội nghị Khoa học CNTT 2024"
                 required
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold">Mô tả chi tiết</label>
+              <label className="text-sm font-semibold text-slate-900">Mô tả chi tiết</label>
               <textarea
                 name="description"
                 value={form.description}
                 onChange={handleChange}
                 rows={4}
-                className="px-4 py-2.5 rounded-lg border focus:ring-2 focus:ring-primary resize-none"
+                className="px-4 py-2.5 rounded-lg border 
+                          text-black bg-white 
+                          placeholder-slate-400
+                          focus:ring-2 focus:ring-primary 
+                          focus:outline-none resize-none"
                 placeholder="Giới thiệu về hội nghị..."
               />
             </div>
@@ -150,10 +158,10 @@ const CreateConferencePage = () => {
                 <span className="material-symbols-outlined text-primary text-3xl">
                   cloud_upload
                 </span>
-                <p className="text-sm font-medium">
+                <p className="text-sm font-semibold text-slate-900">
                   Nhấp để tải logo hội nghị
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-600">
                   PNG, JPG, SVG (tối đa 5MB)
                 </p>
               </label>
@@ -196,7 +204,7 @@ const CreateConferencePage = () => {
           <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Start */}
             <div className="space-y-4">
-              <h4 className="text-sm font-bold flex items-center gap-2">
+              <h4 className="text-sm font-bold flex items-center gap-2 text-slate-900">
                 <span className="w-2 h-2 rounded-full bg-green-500"></span>
                 Thời gian bắt đầu
               </h4>
@@ -207,21 +215,21 @@ const CreateConferencePage = () => {
                   name="startDate"
                   value={form.startDate}
                   onChange={handleChange}
-                  className="px-3 py-2 rounded-lg border"
+                  className="px-3 py-2 rounded-lg border text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary"
                 />
                 <input
                   type="time"
                   name="startTime"
                   value={form.startTime}
                   onChange={handleChange}
-                  className="px-3 py-2 rounded-lg border"
+                  className="px-3 py-2 rounded-lg border text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary"
                 />
               </div>
             </div>
 
             {/* End */}
             <div className="space-y-4">
-              <h4 className="text-sm font-bold flex items-center gap-2">
+              <h4 className="text-sm font-bold flex items-center gap-2 text-slate-900">
                 <span className="w-2 h-2 rounded-full bg-red-500"></span>
                 Thời gian kết thúc
               </h4>
@@ -232,14 +240,14 @@ const CreateConferencePage = () => {
                   name="endDate"
                   value={form.endDate}
                   onChange={handleChange}
-                  className="px-3 py-2 rounded-lg border"
+                  className="px-3 py-2 rounded-lg border text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary"
                 />
                 <input
                   type="time"
                   name="endTime"
                   value={form.endTime}
                   onChange={handleChange}
-                  className="px-3 py-2 rounded-lg border"
+                  className="px-3 py-2 rounded-lg border text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary"
                 />
               </div>
             </div>
