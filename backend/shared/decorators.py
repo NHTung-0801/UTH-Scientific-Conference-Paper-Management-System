@@ -60,15 +60,7 @@ def cache(
     cache_none: bool = False,
     include_self: bool = False
 ):
-    """
-    Decorator Cache-Aside cho async function.
-
-    - ttl: seconds
-    - key_prefix: prefix cho key (vd 'conference:list', 'conference:user')
-                 nếu None -> dùng func.__name__
-    - cache_none: True => cache cả kết quả None (chống penetration)
-    - include_self: True => đưa self vào key (thường không cần)
-    """
+    
     def decorator(func: Callable):
         if not inspect.iscoroutinefunction(func):
             raise TypeError("@cache chỉ dùng cho async function. (Bạn có thể bọc sync thành async hoặc tự mở rộng)")

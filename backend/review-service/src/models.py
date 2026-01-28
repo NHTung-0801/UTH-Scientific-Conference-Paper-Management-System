@@ -1,5 +1,7 @@
 from datetime import datetime
 import enum
+from pydantic import BaseModel
+from typing import Optional
 
 from sqlalchemy import (
     Column,
@@ -212,3 +214,22 @@ class Bid(Base):
     __table_args__ = (
         UniqueConstraint('reviewer_id', 'paper_id', name='unique_bid_reviewer_paper'),
     )
+
+class DiscussionCreate(BaseModel):
+    paper_id: int
+    content: str
+    parent_id: Optional[int] = None
+
+class DiscussionOut(BaseModel):
+    id: int
+    paper_id: int
+    sender_id: int
+    content: str
+    sent_at: datetime
+    parent_id: Optional[int]
+    sender_name: Optional[str] = "Unknown"
+    sender_role: Optional[str] = "UNKNOWN"
+    is_me: bool = False
+
+    class Config:
+        from_attributes = True
