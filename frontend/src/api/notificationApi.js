@@ -3,8 +3,10 @@ import axiosClient from "./axiosClient";
 
 const NOTI_PREFIX = process.env.REACT_APP_NOTIFICATION_PREFIX || "/notification";
 
+
 // ⚠️ Khuyến nghị: đừng set interceptor ở đây (vì file này có thể import nhiều lần)
 // Nhưng nếu bạn chưa có interceptor global ở axiosClient thì có thể giữ.
+
 axiosClient.interceptors.request.use((config) => {
   const token =
     localStorage.getItem("access_token") ||
@@ -26,10 +28,15 @@ const notificationApi = {
     return res?.data ?? res;
   },
 
+
+
+  
+
   getUnreadCount: async () => {
     const items = await notificationApi.getMyInbox();
     return Array.isArray(items) ? items.filter((x) => !x.is_read).length : 0;
   },
+
 
   // ✅ prefs
   getMyPrefs: async () => {
@@ -41,6 +48,8 @@ const notificationApi = {
     const res = await axiosClient.put(`${NOTI_PREFIX}/api/notifications/prefs/me`, payload);
     return res?.data ?? res;
   },
+
 };
 
 export default notificationApi;
+

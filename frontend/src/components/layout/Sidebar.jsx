@@ -158,8 +158,7 @@ export default function Sidebar() {
     portalIcon = "admin_panel_settings";
     menuItems = [
       { to: "/admin/dashboard", label: "Tổng quan", icon: "grid_view", exact: true },
-      { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" },
-      { to: "/admin/conferences", label: "Quản lý Hội nghị", icon: "calendar_month" },
+      { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" }, 
       { to: "/admin/profile", label: "Hồ sơ cá nhân", icon: "person" },
       { to: "/admin/settings", label: "Cài đặt tài khoản", icon: "manage_accounts" },
       { to: "/admin/audit", label: "Nhật ký hoạt động", icon: "history" },
@@ -193,9 +192,11 @@ export default function Sidebar() {
     portalTitle = "Trưởng ban";
     portalIcon = "gavel";
     menuItems = [
-      { to: "/chair", label: "Tổng quan", icon: "space_dashboard", end: true },
-      { to: "/chair/papers", label: "Quản lý bài nộp", icon: "article", end: true },
-      { to: "/chair/review-assign", label: "Phân công phản biện", icon: "assignment_ind", end: true },
+      { to: "/chair", label: "Tổng quan", icon: "dashboard", end: true },
+      { to: "/chair/conferences", label: "Danh sách hội nghị", icon: "event" , end: true},
+      { to: "/chair/conferences/create", label: "Tạo hội nghị", icon: "add_circle" , end: true},
+      { to: "/chair/tracks/create", label: "Tạo Track", icon: "add_circle" , end: true},
+      { to: "/chair/reviewers", label: "Quản lý Reviewer", icon: "group" , end: true},
       { to: "/chair/profile", label: "Hồ sơ cá nhân", icon: "person", end: true },
       { to: "/chair/settings", label: "Cài đặt tài khoản", icon: "manage_accounts", end: true },
     ];

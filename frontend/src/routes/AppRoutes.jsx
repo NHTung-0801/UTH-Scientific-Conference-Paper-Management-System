@@ -51,6 +51,15 @@ import DashboardOverview from "../pages/admin/DashboardOverview";
 // Common Pages
 import ProfilePage from "../pages/common/ProfilePage"; // ✅ THÊM MỚI: Trang hồ sơ dùng chung
 
+//Chair page 
+import ConferenceListPage from "../pages/chair/conference/ConferenceListPage";
+import CreateConferencePage from "../pages/chair/conference/CreateConferencePage";
+import CreateTrackPage from "../pages/chair/tracks/CreateTrackPage";
+import ConferenceDetailPage from "../pages/chair/conference/ConferenceDetailPage";
+import ConferenceEditPage from "../pages/chair/conference/ConferenceEditPage";
+import TrackEditPage from "../pages/chair/tracks/TrackEditPage";
+import ReviewerManagementPage from "../pages/chair/ReviewerManagementPage";
+
 const AppRoutes = () => {
   return (
     <Routes>
@@ -97,7 +106,17 @@ const AppRoutes = () => {
         {/* CHAIR */}
         <Route element={<PrivateRoute allowedRoles={[ROLES.CHAIR]} />}>
           <Route path="/chair" element={<ChairDashboard />} />
+          
+          <Route path="/chair/conferences" element={<ConferenceListPage />} />
+          <Route path="/chair/conferences/create" element={<CreateConferencePage />}/>
+          <Route path="/chair/tracks/create" element={<CreateTrackPage />} />
+          <Route path="/chair/conferences/:id" element={<ConferenceDetailPage />} />
+          <Route path="/chair/conferences/:id/edit" element={<ConferenceEditPage />} />
+          <Route path="/chair/tracks/:id/edit" element={<TrackEditPage />} />
+          <Route path="/chair/reviewers" element={<ReviewerManagementPage />} />
+          <Route path="/chair/profile" element={<ProfilePage />} /> 
           <Route path="/chair/settings" element={<AccountSettings />} />
+
         </Route>
 
         {/* REVIEWER */}
@@ -118,11 +137,11 @@ const AppRoutes = () => {
         <Route path="/admin" element={<PrivateRoute allowedRoles={[ROLES.ADMIN]} />}>
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<DashboardOverview />} />
-            <Route path="profile" element={<ProfilePage />} /> {/* ✅ THÊM MỚI: Route Hồ sơ Admin */}
+            <Route path="profile" element={<ProfilePage />} /> 
             <Route path="users" element={<AdminDashboard />} />
             <Route path="settings" element={<AccountSettings />} />
             
-            <Route path="conferences" element={<div className="p-10 font-bold text-gray-500">Quản lý Hội nghị (Đang phát triển)</div>} />
+            <Route path="conferences" element={<ConferenceListPage/> } />
             <Route path="audit" element={<div className="p-10 font-bold text-gray-500">Nhật ký hệ thống (Đang phát triển)</div>} />
         </Route>
 

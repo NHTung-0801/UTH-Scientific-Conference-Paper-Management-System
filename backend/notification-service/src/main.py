@@ -1,4 +1,7 @@
 from fastapi import FastAPI
+
+from src.database import engine, Base
+from src.routers import notifications
 from .database import engine, Base
 from .routers import notifications, prefs
 
@@ -12,6 +15,7 @@ app = FastAPI(
 
 app.include_router(notifications.router)
 app.include_router(prefs.router)
+
 
 @app.get("/")
 def root():

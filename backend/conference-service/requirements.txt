@@ -8,3 +8,11 @@ cryptography
 python-multipart
 python-jose[cryptography]
 redis>=5.0.0
+
+python-dotenv
+requests
+httpx
+passlib[bcrypt]
+
+python-jose[cryptography]
+
