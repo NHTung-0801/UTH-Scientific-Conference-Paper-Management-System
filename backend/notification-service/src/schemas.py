@@ -45,6 +45,12 @@ class ReviewerInviteRequest(BaseModel):
     reviewer_name: str
     description: str
     
+class DeviceCreate(BaseModel):
+    fcm_token: str
+    device_type: Optional[str] = "web"
+
+class DeviceResponse(BaseModel):
+    message: str
 class ReviewerInvitationResponse(BaseModel):
     id: int
     conference_id: int

@@ -1,6 +1,8 @@
 import { Outlet, useLocation, Link } from "react-router-dom";
 import Header from "../components/layout/Header";
 import Sidebar from "../components/layout/Sidebar";
+// [MỚI] Import Hook xử lý FCM Notification
+import useFcm from "../hooks/useFcm";
 
 // --- COMPONENT BREADCRUMB (Điều hướng) ---
 const BreadCrumb = () => {
@@ -47,10 +49,27 @@ const BreadCrumb = () => {
     else if (pathname.includes("/admin/users/")) title = "Chi tiết người dùng";
     else title = "Trang chi tiết"; 
   }
+
+  // [FIX] Bổ sung phần render giao diện bị thiếu
+  return (
+    <div className="mb-6 flex flex-col gap-1">
+      <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+        {title}
+      </h1>
+      <nav className="flex text-sm text-gray-500 dark:text-gray-400">
+        <span>Dashboard</span>
+        <span className="mx-2">/</span>
+        <span className="text-primary font-medium">{title}</span>
+      </nav>
+    </div>
+  );
 };
 
 // --- LAYOUT CHÍNH ---
 export default function DashboardLayout() {
+  // [MỚI] Kích hoạt logic FCM (Xin quyền & Lắng nghe thông báo)
+  useFcm();
+
   return (
     <div
       className="h-screen bg-[#f8f6f6] flex flex-col overflow-hidden" 
@@ -61,7 +80,10 @@ export default function DashboardLayout() {
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <main className="flex-1 min-w-0 p-6 overflow-y-auto relative scroll-smooth">
+          {/* Hiển thị tiêu đề trang */}
           <BreadCrumb />
+          
+          {/* Nội dung trang con sẽ nằm ở đây */}
           <Outlet />
         </main>
       </div>

@@ -1,14 +1,19 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import { signInWithPopup } from "firebase/auth"; 
+
 import { useAuth } from "../../context/AuthContext";
 import { getUserRole } from "../../utils/auth";
-import AuthLayout from "../../layouts/AuthLayout"; 
+import AuthLayout from "../../layouts/AuthLayout";
+// [QUAN TRỌNG] Import thêm githubProvider từ file config
+import { auth, googleProvider, githubProvider } from "../../config/firebase"; 
+import authApi from "../../api/authApi"; 
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
-  
+  const { login } = useAuth(); // Hàm login thường (Email/Pass) từ Context
+
   const [formData, setFormData] = useState({
     email: "admin@uth.edu.vn",
     password: "123456",
@@ -20,13 +25,14 @@ const Login = () => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  // Hàm chuyển hướng dùng cho đăng nhập thường (giữ nguyên)
   const redirectByRole = (role) => {
     let r = role;
     if (Array.isArray(role) && role.length > 0) {
-        r = role[0]; 
+      r = role[0];
     }
     r = (r || "").toString().toUpperCase();
-    
+
     switch (r) {
       case "ADMIN":
         navigate("/admin", { replace: true });
@@ -44,6 +50,7 @@ const Login = () => {
     }
   };
 
+  // --- XỬ LÝ ĐĂNG NHẬP THƯỜNG (EMAIL/PASS) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -63,7 +70,6 @@ const Login = () => {
         return;
       }
       redirectByRole(role);
-
     } catch (err) {
       console.error("Login error:", err);
       const status = err?.response?.status;
@@ -73,7 +79,11 @@ const Login = () => {
         toast.error("Sai email hoặc mật khẩu!");
       } else if (status === 422) {
         const detail = data?.detail;
-        toast.error(typeof detail === "string" ? `Dữ liệu không hợp lệ: ${detail}` : "Dữ liệu đăng nhập không hợp lệ (422).");
+        toast.error(
+          typeof detail === "string"
+            ? `Dữ liệu không hợp lệ: ${detail}`
+            : "Dữ liệu đăng nhập không hợp lệ (422)."
+        );
       } else if (status) {
         toast.error(`Lỗi server (${status}). Vui lòng thử lại.`);
       } else {
@@ -84,8 +94,63 @@ const Login = () => {
     }
   };
 
-  const handleOrcid = () => toast.info("ORCID login: Chưa tích hợp.");
-  const handleGoogle = () => toast.info("Google login: Chưa tích hợp.");
+  // --- HÀM DÙNG CHUNG ĐỂ XỬ LÝ SAU KHI CÓ TOKEN TỪ FIREBASE ---
+  const handleFirebaseLogin = async (providerName, providerObj) => {
+    setLoading(true);
+    try {
+      // 1. Mở Popup đăng nhập (Google hoặc GitHub)
+      const result = await signInWithPopup(auth, providerObj);
+      const user = result.user;
+      
+      // 2. Lấy ID Token từ Firebase
+      const idToken = await user.getIdToken();
+
+      // 3. Gửi Token về Backend để đổi lấy Access Token của hệ thống
+      // (Backend chấp nhận mọi token Firebase hợp lệ, không phân biệt Google/GitHub)
+      const response = await authApi.loginWithFirebase(idToken);
+
+      // 4. Lưu Token vào LocalStorage 
+      if (response.access_token) {
+        localStorage.setItem("access_token", response.access_token);
+        if (response.refresh_token) {
+          localStorage.setItem("refresh_token", response.refresh_token);
+        }
+      }
+
+      toast.success(`✅ Đăng nhập ${providerName} thành công!`);
+
+      // 5. [FIX LỖI] Dùng window.location để reload trang và chuyển hướng
+      setTimeout(() => {
+          const role = getUserRole();
+          
+          let targetUrl = "/author"; // Mặc định
+          let r = role;
+          if (Array.isArray(role) && role.length > 0) r = role[0];
+          r = (r || "").toString().toUpperCase();
+
+          if (r === "ADMIN") targetUrl = "/admin";
+          else if (r === "CHAIR") targetUrl = "/chair";
+          else if (r === "REVIEWER") targetUrl = "/reviewer";
+          
+          // Force reload trang web để reset state của AuthContext
+          window.location.href = targetUrl;
+      }, 1000);
+      
+    } catch (err) {
+      console.error(`${providerName} Login Error:`, err);
+      if (err.code === 'auth/popup-closed-by-user') {
+          toast.info(`Đã hủy đăng nhập ${providerName}.`);
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+          toast.error("Email này đã được sử dụng bởi phương thức đăng nhập khác.");
+      } else if (err.response && err.response.status === 401) {
+          toast.error("Lỗi xác thực (401). Vui lòng kiểm tra lại giờ hệ thống.");
+      } else {
+          toast.error(`Đăng nhập ${providerName} thất bại. Vui lòng thử lại.`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthLayout
@@ -112,7 +177,10 @@ const Login = () => {
           </label>
           <div className="relative rounded-md shadow-sm">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <span className="material-symbols-outlined text-gray-400" style={{ fontSize: 20 }}>
+              <span
+                className="material-symbols-outlined text-gray-400"
+                style={{ fontSize: 20 }}
+              >
                 mail
               </span>
             </div>
@@ -139,9 +207,8 @@ const Login = () => {
             >
               Mật khẩu
             </label>
-            {/* ✅ SỬA LINK QUÊN MẬT KHẨU */}
             <div className="text-sm">
-              <Link 
+              <Link
                 to="/forgot-password"
                 className="font-medium text-primary hover:text-red-700 transition-colors"
               >
@@ -152,7 +219,10 @@ const Login = () => {
 
           <div className="relative rounded-md shadow-sm">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <span className="material-symbols-outlined text-gray-400" style={{ fontSize: 20 }}>
+              <span
+                className="material-symbols-outlined text-gray-400"
+                style={{ fontSize: 20 }}
+              >
                 lock
               </span>
             </div>
@@ -194,22 +264,27 @@ const Login = () => {
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-4">
+        {/* --- NÚT GITHUB --- */}
         <button
-          className="flex w-full items-center justify-center gap-3 rounded-lg bg-white dark:bg-gray-800 px-3 py-3 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#24292F] px-3 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#1f2428] transition-colors"
           type="button"
-          onClick={handleOrcid}
+          onClick={() => handleFirebaseLogin("GitHub", githubProvider)}
+          disabled={loading}
         >
-          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
-            <path d="M6.5 7h2v10h-2V7zm4.5 10h2v-6h-2v6zm0-8h2V7h-2v2zm6 8h-2v-4.5c0-.828-.672-1.5-1.5-1.5s-1.5.672-1.5 1.5V17h-2v-6h2v1.07c.563-.842 1.487-1.07 2.227-1.07 1.763 0 2.773 1.255 2.773 3.5V17z" />
+          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
           </svg>
-          <span className="text-sm font-semibold leading-6">Đăng nhập bằng ORCID</span>
+          <span className="text-sm font-semibold leading-6">
+            Đăng nhập bằng GitHub
+          </span>
         </button>
 
+        {/* --- NÚT GOOGLE --- */}
         <button
           className="flex w-full items-center justify-center gap-3 rounded-lg bg-white dark:bg-gray-800 px-3 py-3 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           type="button"
-          onClick={handleGoogle}
+          onClick={() => handleFirebaseLogin("Google", googleProvider)}
+          disabled={loading}
         >
           <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24">
             <path

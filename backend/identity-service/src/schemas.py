@@ -75,6 +75,8 @@ class VerifyOtpRequest(BaseModel):
     email: str
     otp: str
 
+class FirebaseLoginRequest(BaseModel):
+    token: str
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=6, description="Mật khẩu hiện tại để xác thực")
     new_password: str = Field(..., min_length=6, description="Mật khẩu mới muốn đổi")
