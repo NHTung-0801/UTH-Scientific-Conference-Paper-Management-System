@@ -40,17 +40,19 @@ class EmailLogResponse(BaseModel):
         from_attributes = True
 
 class ReviewerInviteRequest(BaseModel):
-    conference_id: int
+
     reviewer_email: EmailStr
     reviewer_name: str
-    description: str
+    description: Optional[str] = None
+    conference_id: Optional[int] = None
     
 class ReviewerInvitationResponse(BaseModel):
     id: int
-    conference_id: int
-    conference_name: str
+    conference_id: Optional[int] = None
+    conference_name: Optional[str] = None
     reviewer_name: str
     reviewer_email: str
+    description: Optional[str] = None
     status: str
 
     model_config = ConfigDict(from_attributes=True)

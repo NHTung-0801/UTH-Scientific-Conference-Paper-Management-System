@@ -149,7 +149,7 @@ services:
       INTERNAL_KEY: ${INTERNAL_KEY}
       SECRET_KEY: ${JWT_SECRET_KEY}
       DATABASE_URL: mysql+pymysql://root:root@notification-db:3306/notification_db
-
+      CONFERENCE_SERVICE_URL: http://conference-service:8000
       CACHE_TYPE: redis
       REDIS_URL: redis://redis:6379/0
       CACHE_PREFIX: notification-service
@@ -189,6 +189,8 @@ services:
     restart: on-failure
     ports:
       - "8002:8000"
+    volumes:
+      - ./backend/conference-service/src/static:/app/src/static
     depends_on:
       conference-db:
         condition: service_healthy
