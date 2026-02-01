@@ -1,3 +1,4 @@
+// frontend/src/api/authApi.js
 import axiosClient from "./axiosClient";
 
 const authApi = {
@@ -5,6 +6,13 @@ const authApi = {
   login: (data) => {
     return axiosClient.post("/identity/api/auth/login", data);
   },
+
+  // --- BỔ SUNG HÀM NÀY ĐỂ LOGIN GOOGLE ---
+  loginWithFirebase: (firebaseToken) => {
+    // Gửi token của Firebase lên backend để đổi lấy token của hệ thống
+    return axiosClient.post("/identity/api/auth/login/firebase", { token: firebaseToken });
+  },
+  // --------------------------------------
 
   register: (data) => {
     return axiosClient.post("/identity/api/auth/register", data);
