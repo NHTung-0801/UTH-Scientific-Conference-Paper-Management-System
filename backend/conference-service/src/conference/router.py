@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from sqlalchemy.orm import Session
 from src.database import get_db
 from src.conference.models import Conference
-
+from pathlib import Path
 from datetime import time, date, datetime
 from uuid import uuid4
 
@@ -27,29 +27,29 @@ from src.security.deps import require_roles
 # =========================
 router = APIRouter(tags=["Conferences"])
 
-# =========================
-# STATIC / UPLOAD CONFIG
-# =========================
-STATIC_DIR = "static"
-LOGO_DIR = os.path.join(STATIC_DIR, "conference_logos")
-os.makedirs(LOGO_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parents[1]  # trỏ về thư mục src
+STATIC_DIR = BASE_DIR / "static"
+LOGO_DIR = STATIC_DIR / "conference_logos"
+LOGO_DIR.mkdir(parents=True, exist_ok=True)
 
 # =========================
 # HELPER FUNCTIONS
 # =========================
 def save_logo(file: UploadFile) -> str:
-    """
-    Save logo file and return public URL path
-    """
-    ext = file.filename.split(".")[-1]
-    filename = f"{uuid4().hex}.{ext}"
-    file_path = os.path.join(LOGO_DIR, filename)
+    if not file:
+        return None
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    ext = Path(file.filename).suffix or ".jpg"
+    filename = f"{uuid4().hex}{ext}"
+    path = LOGO_DIR / filename
 
-    # frontend dùng trực tiếp
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    file.file.close()  # ✅ đóng stream
+
     return f"/static/conference_logos/{filename}"
+
 
 
 def get_conference_status(conference: Conference) -> str:

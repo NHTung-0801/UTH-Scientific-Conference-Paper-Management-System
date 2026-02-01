@@ -74,6 +74,16 @@ def get_me(
 
     return user
 
+def require_admin_or_chair(payload=Depends(require_user)):
+    roles = payload.get("roles") or []
+    if isinstance(roles, str):
+        roles = [roles]
+    roles = [str(r).upper() for r in roles]
+
+    if "ADMIN" not in roles and "CHAIR" not in roles:
+        raise HTTPException(status_code=403, detail="Admin/Chair only")
+    return payload
+
 
 @router.put(
     "/me", 
@@ -107,6 +117,26 @@ def list_users(
 ):
     """Admin lấy danh sách toàn bộ user để quản lý (Dashboard)"""
     return crud.list_users(db)
+
+@router.get("/reviewers", response_model=list[schemas.UserResponse], summary="Liệt kê reviewer accounts (Admin/Chair)")
+def list_reviewer_accounts(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_chair),
+):
+    users = (
+        db.query(models.User)
+          .options(joinedload(models.User.roles))
+          .all()
+    )
+
+    reviewers = []
+    for u in users:
+        roles = u.roles or []
+        if any((getattr(r, "role_name", "") or "").upper() == "REVIEWER" for r in roles):
+            reviewers.append(u)
+
+    return reviewers
+
 
 
 @router.post("/registration", response_model=schemas.UserResponse, summary="Admin tạo tài khoản mới")
