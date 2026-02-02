@@ -1,10 +1,106 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { toast } from "react-toastify";
-import axios from "axios"; // Dùng để gọi API Rebuttal
+// 👇 SỬA 1: Dùng axiosClient của dự án thay vì axios thường để tự động gửi Token
+import axiosClient from "../../api/axiosClient"; 
 import reviewApi from "../../api/reviewApi";
 import ReviewForm from "./ReviewForm";
 import ReviewDiscussion from "./ReviewDiscussion";
+
+// --- COMPONENT AI ANALYSIS (ĐÃ SỬA API CLIENT) ---
+const AIAnalysisSection = ({ paperId }) => {
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchAIAnalysis = async () => {
+    if (!paperId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // 👇 SỬA 2: Gọi qua axiosClient (tự động thêm BaseURL localhost:8080 và Token)
+      // Không cần tự set header Authorization nữa
+      const res = await axiosClient.get(`/intelligent/papers/${paperId}/analyze`);
+      setAnalysis(res.data || res); // axiosClient có thể trả về data trực tiếp tùy interceptor
+    } catch (err) {
+      console.error("AI Error:", err);
+      // Xử lý thông báo lỗi thân thiện
+      let msg = "Không thể phân tích bài báo này.";
+      if (err.response?.status === 404) msg = "AI chưa tìm thấy dữ liệu bài báo này.";
+      if (err.response?.status === 401) msg = "Phiên đăng nhập hết hạn. Hãy F5 hoặc đăng nhập lại.";
+      if (err.response?.status === 500) msg = "Lỗi hệ thống AI. Vui lòng thử lại sau.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-indigo-100 overflow-hidden mb-6 animate-in fade-in slide-in-from-top-2">
+      <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center">
+        <h3 className="font-bold text-indigo-900 flex items-center gap-2">
+           <span className="material-symbols-outlined text-indigo-600">smart_toy</span> 
+           AI Assistant Analysis
+        </h3>
+        {!analysis && !loading && (
+           <button 
+             onClick={fetchAIAnalysis} 
+             className="text-xs font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors shadow-sm flex items-center gap-1"
+           >
+             <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+             Phân tích ngay
+           </button>
+        )}
+      </div>
+      
+      <div className="p-4">
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-4 text-indigo-500 gap-2">
+            <span className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></span>
+            <span className="text-sm font-medium animate-pulse">Đang đọc bài báo và suy nghĩ...</span>
+          </div>
+        )}
+        
+        {error && (
+          <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-start gap-2">
+            <span className="material-symbols-outlined text-lg mt-0.5">error</span>
+            <span>{error}</span>
+          </div>
+        )}
+        
+        {analysis && (
+          <div className="space-y-4">
+             <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Tóm tắt (Synopsis)</label>
+                <p className="text-sm text-slate-800 leading-relaxed text-justify">
+                  {analysis.synopsis}
+                </p>
+             </div>
+             <div>
+                <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Ý chính (Key Points)</label>
+                <ul className="space-y-2">
+                  {analysis.key_points?.map((point, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-sm text-slate-700 bg-white p-2 rounded border border-slate-100 shadow-sm">
+                       <span className="material-symbols-outlined text-emerald-500 text-lg shrink-0">check_circle</span>
+                       <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+             </div>
+          </div>
+        )}
+
+        {!analysis && !loading && !error && (
+          <div className="text-center py-6 text-slate-400 text-sm bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+             Bấm nút <b>"Phân tích ngay"</b> để AI tóm tắt và đánh giá sơ bộ bài báo này giúp bạn.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------
 
 const ReviewWorkspace = () => {
   const { assignmentId } = useParams();
@@ -17,7 +113,7 @@ const ReviewWorkspace = () => {
   // --- DATA STATES ---
   const [assignment, setAssignment] = useState(null);
   const [paper, setPaper] = useState(null);
-  const [rebuttal, setRebuttal] = useState(null); // <--- State lưu phản biện
+  const [rebuttal, setRebuttal] = useState(null);
   const [blockedByCoi, setBlockedByCoi] = useState(false);
   const [coiInfo, setCoiInfo] = useState(null);
 
@@ -47,24 +143,21 @@ const ReviewWorkspace = () => {
     },
   });
 
-  // Helper hiển thị thời gian
   const formatTime = (date) => date.toLocaleTimeString("vi-VN", { hour: '2-digit', minute:'2-digit' });
 
-  // Tính toán Deadline
   const isOverdue = useMemo(() => {
     if (!assignment?.due_date) return false;
     return new Date() > new Date(assignment.due_date);
   }, [assignment]);
 
-  // Lấy URL PDF
   const pdfUrl = useMemo(() => {
       if (paper?.versions && paper.versions.length > 0) {
+          const relativeUrl = paper.versions[0].file_url;
           return paper.versions[0].file_url;
       }
       return null;
   }, [paper]);
 
-  // Tự động chuyển sang Split View nếu có PDF và màn hình lớn
   useEffect(() => {
     if (pdfUrl && window.innerWidth > 1024) {
         setViewMode("split");
@@ -120,12 +213,17 @@ const ReviewWorkspace = () => {
         if (a.paper) {
           setPaper(a.paper);
         } else {
-          // Fallback fetch PDF URL
+          // Fallback fetch PDF URL - CHÚ Ý: Logic này có thể gây 404 nếu backend sai
+          // Nhưng ở đây ta đã có paperId từ assignment rồi, nên có thể bỏ qua fetch này nếu không cần thiết
           let url = "";
           try {
+             // Chỉ gọi nếu thực sự cần
              const pdfRes = await reviewApi.getPaperPdfUrlByAssignment(assignmentId);
              url = (pdfRes.data || pdfRes).pdf_url || "";
-          } catch(ignore) {}
+          } catch(ignore) {
+             // Bỏ qua lỗi 404 PDF để không làm crash trang
+             console.warn("Không lấy được PDF URL:", ignore.message);
+          }
 
           setPaper({
              id: paperId,
@@ -135,18 +233,14 @@ const ReviewWorkspace = () => {
           });
         }
 
-        // --- 👇 LẤY REBUTTAL (PHẢN BIỆN CỦA TÁC GIẢ) 👇 ---
+        // --- 👇 FETCH REBUTTAL (SỬA LẠI DÙNG AXIOSCLIENT) 👇 ---
         if (paperId && !openCoi) {
             try {
-                // Gọi trực tiếp axios vì chưa có trong reviewApi
-                const token = localStorage.getItem("token");
-                const rebRes = await axios.get(`http://localhost:8080/review/rebuttals/paper/${paperId}`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setRebuttal(rebRes.data);
+                // Sửa: Dùng axiosClient thay vì axios thường
+                const rebRes = await axiosClient.get(`/review/rebuttals/paper/${paperId}`);
+                setRebuttal(rebRes.data || rebRes);
             } catch (e) {
-                // 404 nghĩa là chưa có rebuttal -> Không làm gì cả
-                setRebuttal(null);
+                setRebuttal(null); // Không có rebuttal hoặc lỗi -> bỏ qua
             }
         }
         // --------------------------------------------------
@@ -213,7 +307,6 @@ const ReviewWorkspace = () => {
     if (loading || isSubmitted || isFirstLoad.current) { isFirstLoad.current = false; return; }
     const timer = setTimeout(() => { onSave(true, true); }, 2000);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
 
   // --- Handlers ---
@@ -313,7 +406,6 @@ const ReviewWorkspace = () => {
     }
   };
 
-  // --- Sub-component: REBUTTAL DISPLAY ---
   const RebuttalSection = () => {
       if (!rebuttal) return null;
       return (
@@ -343,7 +435,6 @@ const ReviewWorkspace = () => {
 
   return (
     <div className="bg-[#f8f9fa] h-screen flex flex-col overflow-hidden">
-      {/* --- HEADER --- */}
       <header className="bg-white border-b border-slate-200 shrink-0 z-20 shadow-sm h-16 flex items-center px-4 justify-between">
           <div className="flex items-center gap-4 min-w-0">
             <button onClick={() => navigate("/reviewer/assignments")} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
@@ -358,7 +449,6 @@ const ReviewWorkspace = () => {
           </div>
 
           <div className="flex items-center gap-3">
-             {/* Toggle View Mode Button */}
              <div className="hidden lg:flex bg-slate-100 rounded-lg p-1 mr-2 border border-slate-200">
                 <button 
                    onClick={() => setViewMode("standard")}
@@ -378,7 +468,6 @@ const ReviewWorkspace = () => {
                 </button>
              </div>
 
-             {/* Action Buttons */}
              {!isSubmitted ? (
                 <>
                   <button disabled={saving} onClick={() => onSave(true, false)} className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 disabled:opacity-50">
@@ -403,13 +492,9 @@ const ReviewWorkspace = () => {
           </div>
       </header>
 
-      {/* --- MAIN CONTENT --- */}
       {viewMode === "split" && pdfUrl ? (
-        // === SPLIT VIEW LAYOUT ===
         <div className="flex flex-1 overflow-hidden">
-           {/* LEFT: PDF Viewer */}
            <div className="w-1/2 h-full border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-center">
-              {/* Dùng thẻ object để ép hiển thị PDF */}
               <object 
                  data={`${pdfUrl}#view=FitH&toolbar=0`} 
                  type="application/pdf" 
@@ -427,10 +512,11 @@ const ReviewWorkspace = () => {
               </object>
            </div>
 
-           {/* RIGHT: Grading Form */}
            <div className="w-1/2 h-full overflow-y-auto bg-[#f8f9fa] p-6 custom-scrollbar">
               <div className="max-w-3xl mx-auto space-y-6">
-                 {/* Discussion Mini-view */}
+                 {/* 👇 AI Analysis trong Split View */}
+                 <AIAnalysisSection paperId={paper?.id} />
+
                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                        <h3 className="font-bold text-slate-800 text-sm">Thảo luận</h3>
@@ -441,7 +527,6 @@ const ReviewWorkspace = () => {
                     </div>
                  </div>
 
-                 {/* REBUTTAL SECTION */}
                  <RebuttalSection />
 
                  <ReviewForm form={form} onCriteriaChange={handleCriteriaChange} onFieldChange={handleFieldChange} />
@@ -455,7 +540,6 @@ const ReviewWorkspace = () => {
            </div>
         </div>
       ) : (
-        // === STANDARD VIEW LAYOUT (Cũ) ===
         <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 w-full overflow-y-auto h-full pb-20 custom-scrollbar">
             <div className="lg:col-span-4 space-y-6">
               <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
@@ -482,6 +566,10 @@ const ReviewWorkspace = () => {
                     )}
                   </div>
               </div>
+
+              {/* 👇 AI Analysis trong Standard View */}
+              <AIAnalysisSection paperId={paper?.id} />
+              
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800">Thảo luận</h3>
@@ -494,7 +582,6 @@ const ReviewWorkspace = () => {
             </div>
 
             <div className="lg:col-span-8">
-              {/* REBUTTAL SECTION */}
               <RebuttalSection />
 
               <ReviewForm form={form} onCriteriaChange={handleCriteriaChange} onFieldChange={handleFieldChange} />
