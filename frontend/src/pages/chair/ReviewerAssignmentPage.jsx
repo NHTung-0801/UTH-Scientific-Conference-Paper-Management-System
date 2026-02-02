@@ -68,19 +68,20 @@ export default function ReviewerAssignmentPage() {
   const [searchConf, setSearchConf] = useState("");
   const [selectedConfId, setSelectedConfId] = useState(null);
 
-  // track/topic (load đúng theo ConferenceDetailPage: tracks by conference + topics by track)
+  // track/topic
   const [tracks, setTracks] = useState([]);
-  const [topics, setTopics] = useState([]); // flatten all topics of selected conf
-  const [topicsByTrack, setTopicsByTrack] = useState({}); // { [trackId]: Topic[] }
+  const [topics, setTopics] = useState([]);
+  const [topicsByTrack, setTopicsByTrack] = useState({});
   const [trackId, setTrackId] = useState("");
   const [topicId, setTopicId] = useState("");
 
-  // reviewer accepted
+  // invitations + accounts
   const [items, setItems] = useState([]); // invitations
-  const [reviewerAccounts, setReviewerAccounts] = useState([]); // identity users
+  const [reviewerAccounts, setReviewerAccounts] = useState([]);
 
   // multi-select reviewers
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [sending, setSending] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -138,7 +139,6 @@ export default function ReviewerAssignmentPage() {
         return;
       }
 
-      // reset UI when changing conference
       setTracks([]);
       setTopics([]);
       setTopicsByTrack({});
@@ -147,12 +147,10 @@ export default function ReviewerAssignmentPage() {
       setSelectedIds(new Set());
 
       try {
-        // 1) tracks by conference
         const t = await conferenceApi.getTracksByConference(selectedConfId);
         const trackList = Array.isArray(t) ? t : [];
         setTracks(trackList);
 
-        // 2) topics by each track
         const map = {};
         await Promise.all(
           trackList.map(async (tr) => {
@@ -167,10 +165,7 @@ export default function ReviewerAssignmentPage() {
         );
 
         setTopicsByTrack(map);
-
-        // flatten topics
-        const allTopics = Object.values(map).flat();
-        setTopics(allTopics);
+        setTopics(Object.values(map).flat());
       } catch (e) {
         console.error("Load tracks/topics failed", e);
         setTracks([]);
@@ -192,7 +187,7 @@ export default function ReviewerAssignmentPage() {
     return m;
   }, [reviewerAccounts]);
 
-  // ✅ count invited for selected conf (id first, fallback by name)
+  // invited count
   const invitedCountForSelected = useMemo(() => {
     if (!selectedConference) return 0;
 
@@ -208,7 +203,7 @@ export default function ReviewerAssignmentPage() {
     }).length;
   }, [items, selectedConference]);
 
-  // ✅ accepted reviewers: filter "an toàn" theo conference + dedupe
+  // accepted reviewers (dedupe)
   const acceptedReviewers = useMemo(() => {
     const list = (items || []).filter((i) => String(i.status).toUpperCase() === "ACCEPTED");
     if (!selectedConference) return [];
@@ -223,9 +218,7 @@ export default function ReviewerAssignmentPage() {
       if (cid != null && selectedId) return String(cid) === selectedId;
       if (!cid && cname && selectedName) return cname === selectedName;
 
-      // thiếu cả id/name -> vẫn giữ (tránh rỗng toàn bộ)
       if (!cid && !cname) return true;
-
       return false;
     });
 
@@ -274,7 +267,21 @@ export default function ReviewerAssignmentPage() {
     });
   };
 
-  const handleAssign = () => {
+  // ✅ topics filtered by track
+  const topicOptions = useMemo(() => {
+    if (!trackId) return topics || [];
+    return (topics || []).filter((t) => String(t.track_id) === String(trackId));
+  }, [topics, trackId]);
+
+  // tags for left list (only selected conf)
+  const getTopicTagsForConf = (conf) => {
+    if (!selectedConfId || String(conf?.id) !== String(selectedConfId)) return [];
+    const all = Object.values(topicsByTrack || {}).flat();
+    return all.map((x) => x?.name).filter(Boolean);
+  };
+
+  // ✅ GỬI LỜI MỜI HỘI NGHỊ (notification) khi bấm “Phân công”
+  const handleAssign = async () => {
     if (!selectedConference) {
       alert("Vui lòng chọn hội nghị.");
       return;
@@ -283,29 +290,64 @@ export default function ReviewerAssignmentPage() {
       alert("Vui lòng chọn ít nhất 1 reviewer.");
       return;
     }
+    if (!trackId) {
+      alert("Vui lòng chọn Track.");
+      return;
+    }
+    if (!topicId) {
+      alert("Vui lòng chọn Topic.");
+      return;
+    }
 
     const chosenTrack = tracks.find((t) => String(t.id) === String(trackId));
     const chosenTopic = (topics || []).find((t) => String(t.id) === String(topicId));
 
-    alert(
-      `UI OK ✅\nHội nghị: ${selectedConference?.name || selectedConference?.conference_name}\nTrack: ${
-        chosenTrack?.name || trackId || "—"
-      }\nTopic: ${chosenTopic?.name || topicId || "—"}\nSố reviewer chọn: ${selectedIds.size}`
-    );
-  };
+    const chosenReviewers = acceptedReviewers
+      .map((r) => r.account)
+      .filter((acc) => selectedIds.has(String(acc.id)));
 
-  // ✅ topics filtered by track (topicApi trả {id, name, track_id})
-  const topicOptions = useMemo(() => {
-    if (!trackId) return topics || [];
-    return (topics || []).filter((t) => String(t.track_id) === String(trackId));
-  }, [topics, trackId]);
+    if (!chosenReviewers.length) {
+      alert("Không tìm thấy reviewer đã chọn.");
+      return;
+    }
 
-  // ✅ topic tags for left list:
-  // - Hiển thị tag cho hội nghị đang chọn (vì topicsByTrack được load theo selectedConfId)
-  const getTopicTagsForConf = (conf) => {
-    if (!selectedConfId || String(conf?.id) !== String(selectedConfId)) return [];
-    const all = Object.values(topicsByTrack || {}).flat();
-    return all.map((x) => x?.name).filter(Boolean);
+    const confName = selectedConference?.name || selectedConference?.conference_name || "Hội nghị";
+    const trName = chosenTrack?.name || "—";
+    const tpName = chosenTopic?.name || "—";
+
+    const description =
+      `Bạn được mời tham gia phản biện cho hội nghị: ${confName}\n` +
+      `Track: ${trName}\nTopic: ${tpName}`;
+
+    try {
+      setSending(true);
+
+      // Gửi từng reviewer (giống InviteReviewerModal)
+      for (const u of chosenReviewers) {
+        await reviewerApi.inviteReviewer({
+          reviewer_email: u.email,
+          reviewer_name: u.name || u.full_name || "Reviewer",
+          description,
+
+          // ✅ thêm context hội nghị (backend nhận thì map được)
+          conference_id: selectedConference.id,
+          conference_name: confName,
+          track_id: chosenTrack?.id,
+          track_name: trName,
+          topic_id: chosenTopic?.id,
+          topic_name: tpName,
+        });
+      }
+
+      alert(`✅ Đã gửi lời mời hội nghị tới ${chosenReviewers.length} reviewer`);
+      await fetchData();
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error(err?.response?.data || err);
+      alert(err?.response?.data?.detail || "Gửi lời mời thất bại");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -315,7 +357,7 @@ export default function ReviewerAssignmentPage() {
           <div>
             <h2 className="text-3xl font-black text-slate-900">Phân công Reviewer</h2>
             <p className="text-slate-500 mt-1">
-              Chọn hội nghị ongoing → chọn track/topic → chọn reviewer đã chấp nhận để phân công
+              Chọn hội nghị ongoing → chọn track/topic → chọn reviewer đã chấp nhận để gửi lời mời hội nghị
             </p>
           </div>
 
@@ -441,9 +483,9 @@ export default function ReviewerAssignmentPage() {
                   <button
                     onClick={handleAssign}
                     className="px-5 h-11 bg-rose-600 text-white rounded-xl font-bold shadow hover:opacity-95 disabled:opacity-60"
-                    disabled={!selectedConference || selectedCount === 0}
+                    disabled={!selectedConference || selectedCount === 0 || sending}
                   >
-                    Phân công ({String(selectedCount).padStart(2, "0")})
+                    {sending ? "Đang gửi..." : `Phân công (${String(selectedCount).padStart(2, "0")})`}
                   </button>
                 </div>
               </div>
@@ -480,11 +522,7 @@ export default function ReviewerAssignmentPage() {
                     disabled={!selectedConference || topicOptions.length === 0}
                   >
                     <option value="">
-                      {!selectedConference
-                        ? "Chọn hội nghị trước"
-                        : topicOptions.length
-                        ? "Chọn topic"
-                        : "Chưa có topic"}
+                      {!selectedConference ? "Chọn hội nghị trước" : topicOptions.length ? "Chọn topic" : "Chưa có topic"}
                     </option>
                     {topicOptions.map((t) => (
                       <option key={t.id} value={t.id}>
@@ -607,7 +645,8 @@ export default function ReviewerAssignmentPage() {
 
         {selectedConference && tracks.length === 0 ? (
           <div className="text-xs text-slate-500">
-            * Không thấy track? Kiểm tra endpoint <code className="mx-1">GET /conference/api/tracks/conference/{`{conferenceId}`}</code>.
+            * Không thấy track? Kiểm tra endpoint{" "}
+            <code className="mx-1">GET /conference/api/tracks/conference/{`{conferenceId}`}</code>.
           </div>
         ) : null}
       </div>

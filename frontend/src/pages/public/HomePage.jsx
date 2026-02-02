@@ -1,7 +1,106 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import conferenceApi from "../../api/conferenceApi";
+import topicApi from "../../api/topicApi";
+
 
 const HomePage = () => {
+    const [conferences, setConferences] = useState([]);
+  const [loadingOngoing, setLoadingOngoing] = useState(true);
+
+  // map: confId -> tracks[]
+  const [tracksByConf, setTracksByConf] = useState({});
+  // map: confId -> topicTags[] (unique)
+  const [topicTagsByConf, setTopicTagsByConf] = useState({});
+
+  const API_BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8080";
+
+  const buildLogoUrl = (logo) => {
+    if (!logo) return null;
+    if (logo.startsWith("http")) return logo;
+
+    if (logo.startsWith("/static/")) return `${API_BASE}/conference${logo}`;
+    if (logo.startsWith("static/")) return `${API_BASE}/conference/${logo}`;
+    return null;
+  };
+
+  const now = new Date();
+
+  const getStatus = (conf) => {
+    const start = new Date(conf.start_date);
+    const end = new Date(conf.end_date);
+    if (now < start) return "UPCOMING";
+    if (now > end) return "ENDED";
+    return "ONGOING";
+  };
+
+  const ongoingConferences = useMemo(() => {
+    return (conferences || []).filter((c) => getStatus(c) === "ONGOING");
+  }, [conferences]);
+
+  // load conferences + load tracks/topics cho ongoing conf
+  useEffect(() => {
+    const run = async () => {
+      setLoadingOngoing(true);
+      try {
+        const res = await conferenceApi.getAllConferences();
+        const list = Array.isArray(res) ? res : [];
+        setConferences(list);
+
+        const ongoing = list.filter((c) => getStatus(c) === "ONGOING");
+
+        // load tracks theo conf
+        const tracksMap = {};
+        const tagsMap = {};
+
+        await Promise.all(
+          ongoing.map(async (conf) => {
+            try {
+              const tracks = await conferenceApi.getTracksByConference(conf.id);
+              const trackList = Array.isArray(tracks) ? tracks : [];
+              tracksMap[conf.id] = trackList;
+
+              // load topics theo từng track để lấy tags
+              const allTopics = await Promise.all(
+                trackList.map(async (tr) => {
+                  try {
+                    const tp = await topicApi.getTopicsByTrack(tr.id);
+                    return Array.isArray(tp) ? tp : [];
+                  } catch {
+                    return [];
+                  }
+                })
+              );
+
+              const flat = allTopics.flat();
+              // lấy name làm tag (unique)
+              const uniq = Array.from(
+                new Set(flat.map((t) => t?.name).filter(Boolean))
+              );
+
+              tagsMap[conf.id] = uniq;
+            } catch (e) {
+              tracksMap[conf.id] = [];
+              tagsMap[conf.id] = [];
+            }
+          })
+        );
+
+        setTracksByConf(tracksMap);
+        setTopicTagsByConf(tagsMap);
+      } catch (e) {
+        setConferences([]);
+        setTracksByConf({});
+        setTopicTagsByConf({});
+      } finally {
+        setLoadingOngoing(false);
+      }
+    };
+
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-text-dark dark:text-white antialiased overflow-x-hidden">
       <div className="relative flex min-h-screen flex-col">
@@ -281,6 +380,148 @@ const HomePage = () => {
               </div>
             </div>
           </section>
+
+                      {/* ===== ONGOING CONFERENCES LIST (NEW) ===== */}
+          <section className="w-full px-4 py-12 md:px-10 lg:px-20 bg-background-light dark:bg-[#150a0a]">
+            <div className="flex flex-col gap-8 @container">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div className="flex flex-col gap-2 max-w-[760px]">
+                  <h2 className="text-3xl font-bold leading-tight tracking-tight md:text-4xl dark:text-white">
+                    Hội nghị đang diễn ra
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-lg">
+                    Danh sách hội nghị hiện đang mở — xem nhanh track và các chủ đề (topic) liên quan.
+                  </p>
+                </div>
+
+                <Link
+                  to="/login"
+                  className="flex items-center gap-2 text-primary font-bold hover:underline whitespace-nowrap"
+                >
+                  Xem chi tiết
+                  <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                </Link>
+              </div>
+
+              {loadingOngoing ? (
+                <div className="bg-white dark:bg-[#211111] rounded-xl border border-[#e5dcdc] dark:border-[#3a2a2a] p-6 text-gray-600 dark:text-gray-400">
+                  Đang tải danh sách hội nghị...
+                </div>
+              ) : ongoingConferences.length === 0 ? (
+                <div className="bg-white dark:bg-[#211111] rounded-xl border border-[#e5dcdc] dark:border-[#3a2a2a] p-6 text-gray-600 dark:text-gray-400">
+                  Hiện chưa có hội nghị nào đang diễn ra.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {ongoingConferences.map((conf) => {
+                    const tracks = tracksByConf[conf.id] || [];
+                    const tags = topicTagsByConf[conf.id] || [];
+
+                    const logoUrl = buildLogoUrl(conf.logo) || "/placeholder-conference.jpg";
+
+                    return (
+                      <div
+                        key={conf.id}
+                        className="rounded-2xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] p-5 hover:shadow-lg transition"
+                      >
+                        <div className="flex gap-4">
+                          {/* left image */}
+                          <div
+                            className="w-28 h-20 rounded-xl bg-cover bg-center flex-none border border-[#e5dcdc] dark:border-[#3a2a2a]"
+                            style={{ backgroundImage: `url("${logoUrl}")` }}
+                          />
+
+                          {/* content */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 text-[11px] font-bold">
+                                  <span className="size-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                                  Đang diễn ra
+                                </div>
+
+                                <h3 className="mt-2 text-lg font-black text-[#181111] dark:text-white truncate">
+                                  {conf.name}
+                                </h3>
+
+                                {conf.description ? (
+                                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                                    {conf.description}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <Link
+                                to="/login"
+                                className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary text-white font-bold text-sm hover:bg-red-700 transition-colors flex-none"
+                              >
+                                Nộp bài
+                              </Link>
+                            </div>
+
+                            {/* tracks */}
+                            <div className="mt-3">
+                              <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                Tracks
+                              </div>
+                              {tracks.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {tracks.slice(0, 6).map((t) => (
+                                    <span
+                                      key={t.id}
+                                      className="px-2 py-1 rounded-md bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-gray-200 text-[11px] font-semibold"
+                                    >
+                                      {t.name}
+                                    </span>
+                                  ))}
+                                  {tracks.length > 6 ? (
+                                    <span className="text-[11px] text-gray-400">+{tracks.length - 6}</span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">
+                                  (Chưa có track)
+                                </div>
+                              )}
+                            </div>
+
+                            {/* topic tags */}
+                            <div className="mt-4">
+                              <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                Topics
+                              </div>
+
+                              {tags.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {tags.slice(0, 10).map((tg, idx) => (
+                                    <span
+                                      key={`${conf.id}-tg-${idx}`}
+                                      className="px-2 py-1 rounded-full bg-primary/10 dark:bg-primary/20 text-primary text-[11px] font-bold"
+                                    >
+                                      {tg}
+                                    </span>
+                                  ))}
+                                  {tags.length > 10 ? (
+                                    <span className="text-[11px] text-gray-400">+{tags.length - 10}</span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">
+                                  (Chưa có topic)
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+
 
           {/* ===== DEADLINES (CHỈ 1 LẦN - timeline chuẩn) ===== */}
           <section className="w-full px-4 py-16 md:px-10 lg:px-20" id="deadlines">
