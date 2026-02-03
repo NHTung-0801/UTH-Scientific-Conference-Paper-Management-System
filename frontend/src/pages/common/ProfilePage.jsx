@@ -145,7 +145,6 @@ export default function ProfilePage() {
       
       {/* 1. HEADER CARD */}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-        {/* 🔥 ĐỔI MÀU: Dùng var(--primary) cho gradient */}
         <div 
           className="h-32"
           style={{ background: "linear-gradient(to right, rgb(var(--primary-rgb) / 0.8), var(--primary))" }}

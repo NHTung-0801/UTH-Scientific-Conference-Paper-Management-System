@@ -14,7 +14,8 @@ from src.conference.schemas import (
     ConferenceCreate,
     ConferenceUpdate,
     ConferenceResponse,
-    ConferenceUpdateResult
+    ConferenceUpdateResult,
+    CameraReadyOpenIn
 )
 from fastapi import UploadFile, File, Form
 
@@ -100,6 +101,9 @@ def get_conferences(db: Session = Depends(get_db)):
             "start_date": c.start_date,
             "end_date": c.end_date,
             "status": get_conference_status(c),
+            "camera_ready_open": c.camera_ready_open,
+            "camera_ready_deadline": c.camera_ready_deadline,
+
         }
         for c in conferences
     ]
@@ -192,6 +196,8 @@ def get_conference_by_id(
         "end_date": conference.end_date,
         "status": get_conference_status(conference),
         "created_by": conference.created_by,
+        "camera_ready_open": conference.camera_ready_open,
+        "camera_ready_deadline": conference.camera_ready_deadline,
     }
 
 # =========================
@@ -297,3 +303,72 @@ def delete_conference(
         "message": "Conference deleted successfully",
         "id": conference_id,
     }
+
+
+
+# =========================
+# GET CONFERENCE PHASE (CAMERA-READY)
+# =========================
+@router.get("/{conference_id}/phase")
+def get_conference_phase(conference_id: int, db: Session = Depends(get_db)):
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    return {
+        "conference_id": conf.id,
+        "camera_ready_open": getattr(conf, "camera_ready_open", False),
+        "camera_ready_deadline": getattr(conf, "camera_ready_deadline", None),
+    }
+
+
+# =========================
+# OPEN CAMERA-READY (CHAIR/ADMIN)
+# =========================
+@router.put("/{conference_id}/camera-ready/open")
+def open_camera_ready(
+    conference_id: int,
+    body: CameraReadyOpenIn,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
+):
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    conf.camera_ready_open = True
+    conf.camera_ready_deadline = body.deadline
+    db.commit()
+    db.refresh(conf)
+
+    return {
+        "conference_id": conf.id,
+        "camera_ready_open": conf.camera_ready_open,
+        "camera_ready_deadline": conf.camera_ready_deadline,
+    }
+
+
+# =========================
+# CLOSE CAMERA-READY (CHAIR/ADMIN)
+# =========================
+@router.put("/{conference_id}/camera-ready/close")
+def close_camera_ready(
+    conference_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
+):
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    conf.camera_ready_open = False
+    db.commit()
+    db.refresh(conf)
+
+    return {
+        "conference_id": conf.id,
+        "camera_ready_open": conf.camera_ready_open,
+        "camera_ready_deadline": conf.camera_ready_deadline,
+    }
+
+

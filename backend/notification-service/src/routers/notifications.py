@@ -29,11 +29,6 @@ INTERNAL_KEY = os.getenv("INTERNAL_KEY", "")
 
 from ..security.deps import get_current_payload, require_roles
 
-@router.post(
-    "",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles(["AUTHOR", "REVIEWER", "CHAIR", "ADMIN"]))],
-)
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def send_notification(

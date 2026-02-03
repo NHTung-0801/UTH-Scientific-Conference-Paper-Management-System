@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, Text, Boolean, Enum, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from sqlalchemy.dialects.mysql import JSON
@@ -13,6 +13,7 @@ class PaperStatus(str, enum.Enum):
     REJECTED = "REJECTED"           # Bị từ chối
     REVISION_REQUIRED = "REVISION_REQUIRED" # Cần sửa chữa 
     WITHDRAWN = "WITHDRAWN" # rút bài
+    
 
 # 2. Bảng chính: Bài báo (Papers)
 class Paper(Base):
@@ -90,4 +91,40 @@ class PaperTopic(Base):
 
     paper = relationship("Paper", back_populates="topics")
 
+class Proceedings(Base):
+    __tablename__ = "proceedings"
 
+    id = Column(Integer, primary_key=True, index=True)
+    conference_id = Column(Integer, unique=True, index=True, nullable=False)
+
+    title = Column(String(255), nullable=False)
+    isbn_issn = Column(String(64), nullable=True)
+    volume = Column(String(64), nullable=True)
+    publisher = Column(String(255), nullable=True)
+    published_date = Column(Date, nullable=True)
+
+    cover_image_url = Column(String(500), nullable=True)
+    preface = Column(Text, nullable=True)
+    copyright = Column(Text, nullable=True)
+
+    is_published = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = relationship("ProceedingsItem", back_populates="proceedings", cascade="all, delete-orphan")
+
+
+class ProceedingsItem(Base):
+    __tablename__ = "proceedings_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proceedings_id = Column(Integer, ForeignKey("proceedings.id", ondelete="CASCADE"), nullable=False)
+    paper_id = Column(Integer, nullable=False)
+    sort_order = Column(Integer, default=0)
+
+    proceedings = relationship("Proceedings", back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint("proceedings_id", "paper_id", name="uq_proceedings_paper"),
+    )

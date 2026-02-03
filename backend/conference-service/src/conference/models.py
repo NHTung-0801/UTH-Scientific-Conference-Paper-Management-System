@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, Boolean
 from src.database import Base
 from sqlalchemy.orm import relationship
 from sqlalchemy import DateTime
@@ -10,9 +10,12 @@ class Conference(Base):
     logo = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
     created_by = Column(Integer, nullable=False)  # user_id từ identity-service
-    logo = Column(String(255))
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=False)
+
+    camera_ready_open = Column(Boolean, default=False, nullable=False)
+    camera_ready_deadline = Column(DateTime, nullable=True)
+
     tracks = relationship(
     "Track",
     back_populates="conference",

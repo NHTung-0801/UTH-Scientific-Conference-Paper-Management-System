@@ -1,5 +1,6 @@
 import os
 import shutil
+from uuid import uuid4
 from fastapi import UploadFile, HTTPException
 from src.config import settings
 
@@ -9,6 +10,8 @@ PAPERS_DIR = os.path.join(BASE_UPLOAD_DIR, "papers")
 
 ALLOWED_EXTENSIONS = {".pdf"}
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
+
+UPLOAD_DIR = "uploads"
 
 # Đảm bảo thư mục gốc tồn tại khi chạy
 os.makedirs(PAPERS_DIR, exist_ok=True)
@@ -116,3 +119,21 @@ def get_file_path_local(relative_path: str) -> str:
     Output: /app/uploads/papers/10/v1/paper.pdf
     """
     return os.path.join(BASE_UPLOAD_DIR, relative_path)
+
+def save_proceedings_cover(conference_id: int, upload_file: UploadFile) -> str:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    ext = os.path.splitext(upload_file.filename or "")[1].lower()
+    if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+        ext = ".png"
+
+    filename = f"proceedings_cover_conf_{conference_id}_{uuid4().hex}{ext}"
+    rel_path = os.path.join("proceedings", filename)
+    abs_path = os.path.join(UPLOAD_DIR, rel_path)
+
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    with open(abs_path, "wb") as f:
+        f.write(upload_file.file.read())
+
+    return f"/proceedings/{filename}"
