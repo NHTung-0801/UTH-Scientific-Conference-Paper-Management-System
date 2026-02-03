@@ -16,7 +16,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="UTH Conference Submission Service",
-    root_path="/submission"
+    #root_path="/submission"
 )
 
 # Cấu hình CORS (Để Frontend React gọi được)

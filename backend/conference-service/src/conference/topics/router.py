@@ -14,8 +14,7 @@ import os
 import shutil
 
 router = APIRouter(
-    prefix="/topics",
-    tags=["Topics"]
+    prefix="/api/topics", tags=["Topics"]
 )
 
 # ========================
@@ -59,13 +58,13 @@ def create_topic(
     # ========================
     # CHECK THỜI GIAN HỘI NGHỊ (NV3)
     # ========================
-    now = datetime.now().date()
+    now = datetime.now()
 
-    if now < conference.start_date:
-        raise HTTPException(
-            status_code=400,
-            detail="Conference has not started yet. Cannot create topic."
-        )
+    if now > conference.end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Conference has ended. Cannot create topic."
+            )
 
     if now > conference.end_date:
         raise HTTPException(
