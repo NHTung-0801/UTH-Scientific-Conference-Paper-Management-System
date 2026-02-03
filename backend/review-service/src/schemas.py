@@ -201,3 +201,21 @@ class EvaluationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ChairAssignmentItem(BaseModel):
+    assignment_id: int
+    reviewer_id: int
+    assignment_status: str
+    due_date: Optional[datetime] = None
+    response_date: Optional[datetime] = None
+    has_submitted_review: bool
+    submitted_at: Optional[datetime] = None  # latest submitted_at (nếu có)
+
+class ChairPaperReviewSummary(BaseModel):
+    paper_id: int
+    assigned_count: int
+    submitted_count: int
+    all_submitted: bool
+    latest_submitted_at: Optional[datetime] = None
+    assignments: List[ChairAssignmentItem] = []

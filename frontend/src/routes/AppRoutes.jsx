@@ -69,6 +69,8 @@ import CameraReadyDetailPage from "../pages/chair/CameraReadyDetailPage";
 import ProceedingsIndexPage from "../pages/chair/ProceedingsIndexPage";
 import ProceedingsPublishPage from "../pages/chair/ProceedingsPublishPage";
 import ProceedingsPublishSuccessPage from "../pages/chair/ProceedingsPublishSuccessPage";
+import ChairReviewOverviewPage from "../pages/chair/ChairReviewOverviewPage";
+import ChairReviewDetailPage from "../pages/chair/ChairReviewDetailPage";
 
 
 import CreateTopicPage from "../pages/chair/topics/CreateTopicPage";
@@ -139,6 +141,8 @@ const AppRoutes = () => {
           <Route path="/chair/proceedings" element={<ProceedingsIndexPage />} />
           <Route path="/chair/proceedings/:conferenceId" element={<ProceedingsPublishPage />} />
           <Route path="/chair/proceedings/:conferenceId/success" element={<ProceedingsPublishSuccessPage />} />
+          <Route path="/chair/reviews" element={<ChairReviewOverviewPage />} />
+          <Route path="/chair/reviews/paper/:paperId" element={<ChairReviewDetailPage />} />
 
           
 
