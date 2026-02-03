@@ -122,6 +122,8 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       CACHE_TYPE: redis
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
       REDIS_URL: redis://redis:6379/0
       CACHE_PREFIX: submission-service
       CACHE_DEFAULT_TTL: ${CACHE_DEFAULT_TTL:-300}
@@ -159,6 +161,8 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://root:root@submission-db:3306/submission_db
       RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
     volumes:
       - ./backend/submission-service/uploads:/app/uploads
       - ./backend/submission-service/src:/app/src

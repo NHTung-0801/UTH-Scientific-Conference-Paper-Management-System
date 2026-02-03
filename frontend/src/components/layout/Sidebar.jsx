@@ -161,7 +161,6 @@ export default function Sidebar() {
       { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" }, 
       { to: "/admin/profile", label: "Hồ sơ cá nhân", icon: "person" },
       { to: "/admin/settings", label: "Cài đặt tài khoản", icon: "manage_accounts" },
-      { to: "/admin/audit", label: "Nhật ký hoạt động", icon: "history" },
     ];
   } else if (hasRole(ROLES.AUTHOR) && isAuthorArea) {
     currentArea = "AUTHOR";
@@ -171,6 +170,7 @@ export default function Sidebar() {
       { to: "/author", label: "Dashboard", icon: "home", end: true },
       { to: "/author/conferences", label: "Khám phá hội nghị", icon: "explore", end: true },
       { to: "/author/submissions", label: "Bài nộp của tôi", icon: "article", end: true },
+      { to: "/author/camera-ready", label: "Camera-ready", icon: "camera_alt", end: true },
       { to: "/author/notifications", label: "Thông báo", icon: "notifications", end: true },
       { to: "/author/profile", label: "Hồ sơ cá nhân", icon: "person", end: true },
       { to: "/author/settings", label: "Cài đặt tài khoản", icon: "manage_accounts", end: true },
@@ -200,6 +200,9 @@ export default function Sidebar() {
       { to: "/chair/topics/create", label: "Tạo Topic", icon: "add_circle" , end: true},
       { to: "/chair/reviewers", label: "Quản lý Reviewer", icon: "group" , end: true},
       { to: "/chair/reviewers/assign", label: "Phân công Reviewer", icon: "assignment_ind", end: true },
+      { to: "/chair/reviews", label: "Theo dõi chấm", icon: "fact_check", end: true },
+      { to: "/chair/camera-ready", label: "Camera-ready", icon: "description", end: true },
+      { to: "/chair/proceedings", label: "Kỷ yếu", icon: "menu_book", end: true },
       { to: "/chair/profile", label: "Hồ sơ cá nhân", icon: "person", end: true },
       { to: "/chair/settings", label: "Cài đặt tài khoản", icon: "manage_accounts", end: true },
     ];

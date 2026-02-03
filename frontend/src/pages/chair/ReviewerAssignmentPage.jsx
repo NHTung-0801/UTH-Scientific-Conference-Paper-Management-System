@@ -1,8 +1,6 @@
 // src/pages/chair/ReviewerAssignmentPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import reviewerApi from "../../api/reviewerApi";
-import conferenceApi from "../../api/conferenceApi";
-import topicApi from "../../api/topicApi";
 
 // ---- helpers: interests có thể array / JSON string / "a,b,c"
 const normalizeInterests = (val) => {
@@ -37,22 +35,6 @@ const pickInterests = (acc) => {
   return normalizeInterests(raw);
 };
 
-// ---- ongoing heuristic
-const isOngoingConference = (c) => {
-  const status = String(c?.status || c?.state || "").toUpperCase();
-  if (["ONGOING", "ACTIVE", "OPEN", "RUNNING"].includes(status)) return true;
-
-  const now = Date.now();
-  const start = c?.start_date || c?.startDate || c?.start_time || c?.starts_at;
-  const end = c?.end_date || c?.endDate || c?.end_time || c?.ends_at;
-
-  const startMs = start ? new Date(start).getTime() : null;
-  const endMs = end ? new Date(end).getTime() : null;
-
-  if (startMs && endMs) return startMs <= now && now <= endMs;
-  return false;
-};
-
 // ---- dedupe accepted reviewers by email (fallback by name)
 const makeReviewerKey = (inv, acc) => {
   const email = (acc?.email || inv?.reviewer_email || "").toLowerCase().trim();
@@ -61,120 +43,53 @@ const makeReviewerKey = (inv, acc) => {
   return name ? `name:${name}` : `unknown:${String(acc?.id || inv?.id || Math.random())}`;
 };
 
-// ---- helper: safe get ids
+// ---- safe string
 const asStr = (v) => (v === null || v === undefined ? "" : String(v));
 const normId = (v) => asStr(v).trim();
 
-// ---- helper: paper filters
+// ---- paper helpers
+const pickPaperId = (p) => p?.id ?? p?.paper_id ?? p?.paperId ?? null;
+const pickPaperTitle = (p) => String(p?.title ?? p?.paper_title ?? p?.paperTitle ?? "—");
+const pickPaperConf = (p) =>
+  p?.conference_id ?? p?.conferenceId ?? p?.conference?.id ?? p?.conference?.conference_id ?? null;
+const pickPaperTrack = (p) => p?.track_id ?? p?.trackId ?? p?.track?.id ?? null;
 
-// ✅ match conference:
-// - nếu paper có conference_id thì match trực tiếp
-// - nếu paper KHÔNG có conference_id (case của bạn) -> fallback bằng track_id thuộc conference đang chọn
-const matchConference = (paper, confId, confTracks = []) => {
-  if (!confId) return true;
-
-  const pid =
-    paper?.conference_id ??
-    paper?.conferenceId ??
-    paper?.conference?.id ??
-    paper?.conference?.conference_id ??
-    null;
-
-  if (pid != null) return normId(pid) === normId(confId);
-
-  // fallback by track list
-  const tid = paper?.track_id ?? paper?.trackId ?? paper?.track?.id ?? null;
-  if (tid == null) return false;
-
-  const trackIdSet = new Set((confTracks || []).map((t) => normId(t?.id)));
-  return trackIdSet.has(normId(tid));
-};
-
-const matchTrack = (paper, trackId) => {
-  if (!trackId) return true;
-  const tid = paper?.track_id ?? paper?.trackId ?? paper?.track?.id ?? null;
-  if (tid == null) return false;
-  return normId(tid) === normId(trackId);
-};
-
-// ✅ topics trong paper của bạn: [{ topic_id: 1, id: 2 }]
-// nên phải ưu tiên topic_id (không lấy id)
-const extractTopicIds = (paper) => {
-  const raw =
-    paper?.topic_ids ??
-    paper?.topicIds ??
-    paper?.topics ??
-    paper?.topic ??
-    paper?.topic_id ??
-    paper?.topicId ??
-    null;
-
-  if (!raw) return [];
-
-  if (typeof raw === "number" || typeof raw === "string") return [normId(raw)];
-
-  if (Array.isArray(raw)) {
-    return raw
-      .map((x) => {
-        if (x == null) return "";
-        if (typeof x === "number" || typeof x === "string") return normId(x);
-        // ✅ ưu tiên topic_id vì data có {topic_id, id}
-        return normId(x.topic_id ?? x.topicId ?? x.id);
-      })
-      .filter(Boolean);
-  }
-
-  if (typeof raw === "object") {
-    const id = raw.topic_id ?? raw.topicId ?? raw.id;
-    return id != null ? [normId(id)] : [];
-  }
-
-  return [];
-};
-
-const matchTopic = (paper, topicId) => {
-  if (!topicId) return true;
-  const ids = extractTopicIds(paper);
-  return ids.includes(normId(topicId));
+const fmtDateTime = (val) => {
+  if (!val) return "—";
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("vi-VN");
 };
 
 export default function ReviewerAssignmentPage() {
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
 
-  const [conferences, setConferences] = useState([]);
-  const [searchConf, setSearchConf] = useState("");
-  const [selectedConfId, setSelectedConfId] = useState(null);
-
-  // track/topic
-  const [tracks, setTracks] = useState([]);
-  const [topics, setTopics] = useState([]); // flatten all topics of selected conf
-  const [topicsByTrack, setTopicsByTrack] = useState({}); // { [trackId]: Topic[] }
-  const [trackId, setTrackId] = useState("");
-  const [topicId, setTopicId] = useState("");
+  // papers
+  const [papers, setPapers] = useState([]);
+  const [searchPaper, setSearchPaper] = useState("");
+  const [selectedPaperIds, setSelectedPaperIds] = useState(() => new Set());
 
   // reviewer accepted
   const [items, setItems] = useState([]); // invitations
   const [reviewerAccounts, setReviewerAccounts] = useState([]); // identity users
-
-  // multi-select reviewers
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [selectedReviewerIds, setSelectedReviewerIds] = useState(() => new Set());
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [conf, inv, accounts] = await Promise.all([
-        reviewerApi.getConferences(),
+      const [ps, inv, accounts] = await Promise.all([
+        reviewerApi.getOpenPapersForBidding(),
         reviewerApi.getInvitations(),
         reviewerApi.getReviewerAccounts(),
       ]);
 
-      setConferences(Array.isArray(conf) ? conf : []);
+      setPapers(Array.isArray(ps) ? ps : []);
       setItems(Array.isArray(inv) ? inv : []);
       setReviewerAccounts(Array.isArray(accounts) ? accounts : []);
     } catch (e) {
       console.error(e);
-      setConferences([]);
+      setPapers([]);
       setItems([]);
       setReviewerAccounts([]);
     } finally {
@@ -186,74 +101,6 @@ export default function ReviewerAssignmentPage() {
     fetchData();
   }, []);
 
-  const ongoingConfs = useMemo(() => {
-    const q = searchConf.trim().toLowerCase();
-    return (conferences || [])
-      .filter(isOngoingConference)
-      .filter((c) => {
-        if (!q) return true;
-        const name = String(c?.name || c?.conference_name || "").toLowerCase();
-        const code = String(c?.code || c?.slug || "").toLowerCase();
-        return name.includes(q) || code.includes(q);
-      });
-  }, [conferences, searchConf]);
-
-  const selectedConference = useMemo(() => {
-    const id = String(selectedConfId || "");
-    return (conferences || []).find((c) => String(c?.id) === id) || null;
-  }, [conferences, selectedConfId]);
-
-  // ✅ Load tracks/topics
-  useEffect(() => {
-    const run = async () => {
-      if (!selectedConfId) {
-        setTracks([]);
-        setTopics([]);
-        setTopicsByTrack({});
-        setTrackId("");
-        setTopicId("");
-        setSelectedIds(new Set());
-        return;
-      }
-
-      setTracks([]);
-      setTopics([]);
-      setTopicsByTrack({});
-      setTrackId("");
-      setTopicId("");
-      setSelectedIds(new Set());
-
-      try {
-        const t = await conferenceApi.getTracksByConference(selectedConfId);
-        const trackList = Array.isArray(t) ? t : [];
-        setTracks(trackList);
-
-        const map = {};
-        await Promise.all(
-          trackList.map(async (tr) => {
-            try {
-              const tp = await topicApi.getTopicsByTrack(tr.id);
-              map[tr.id] = Array.isArray(tp) ? tp : [];
-            } catch (err) {
-              console.error("Load topics failed for track", tr.id, err);
-              map[tr.id] = [];
-            }
-          })
-        );
-
-        setTopicsByTrack(map);
-        setTopics(Object.values(map).flat());
-      } catch (e) {
-        console.error("Load tracks/topics failed", e);
-        setTracks([]);
-        setTopics([]);
-        setTopicsByTrack({});
-      }
-    };
-
-    run();
-  }, [selectedConfId]);
-
   // map email -> account
   const accountByEmail = useMemo(() => {
     const m = new Map();
@@ -264,39 +111,11 @@ export default function ReviewerAssignmentPage() {
     return m;
   }, [reviewerAccounts]);
 
-  const invitedCountForSelected = useMemo(() => {
-    if (!selectedConference) return 0;
-
-    const selectedId = String(selectedConference?.id ?? "");
-    const selectedName = String(selectedConference?.name || selectedConference?.conference_name || "").trim();
-
-    return (items || []).filter((x) => {
-      const cid = x?.conference_id ?? x?.conferenceId ?? null;
-      const cname = String(x?.conference_name || x?.conferenceName || "").trim();
-      if (cid != null && selectedId) return String(cid) === selectedId;
-      if (selectedName && cname) return cname === selectedName;
-      return false;
-    }).length;
-  }, [items, selectedConference]);
-
+  // accepted reviewers (dedupe)
   const acceptedReviewers = useMemo(() => {
     const list = (items || []).filter((i) => String(i.status).toUpperCase() === "ACCEPTED");
-    if (!selectedConference) return [];
 
-    const selectedId = String(selectedConference?.id ?? "");
-    const selectedName = String(selectedConference?.name || selectedConference?.conference_name || "").trim();
-
-    const filtered = list.filter((inv) => {
-      const cid = inv?.conference_id ?? inv?.conferenceId ?? null;
-      const cname = String(inv?.conference_name || inv?.conferenceName || "").trim();
-
-      if (cid != null && selectedId) return String(cid) === selectedId;
-      if (!cid && cname && selectedName) return cname === selectedName;
-      if (!cid && !cname) return true;
-      return false;
-    });
-
-    const withAcc = filtered
+    const withAcc = list
       .map((inv) => {
         const acc = accountByEmail.get((inv.reviewer_email || "").toLowerCase().trim()) || null;
         return { ...inv, account: acc };
@@ -309,18 +128,39 @@ export default function ReviewerAssignmentPage() {
       if (!dedupMap.has(key)) dedupMap.set(key, row);
     }
     return Array.from(dedupMap.values());
-  }, [items, accountByEmail, selectedConference]);
+  }, [items, accountByEmail]);
 
-  const allChecked = useMemo(() => {
-    if (!acceptedReviewers.length) return false;
-    return acceptedReviewers.every((r) => selectedIds.has(String(r.account.id)));
-  }, [acceptedReviewers, selectedIds]);
+  // papers filter
+  const filteredPapers = useMemo(() => {
+    const q = searchPaper.trim().toLowerCase();
+    const arr = Array.isArray(papers) ? papers : [];
+    if (!q) return arr;
 
-  const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
+    return arr.filter((p) => {
+      const id = pickPaperId(p);
+      const title = pickPaperTitle(p).toLowerCase();
+      const conf = asStr(pickPaperConf(p)).toLowerCase();
+      const track = asStr(pickPaperTrack(p)).toLowerCase();
+      return (
+        title.includes(q) ||
+        asStr(id).toLowerCase().includes(q) ||
+        conf.includes(q) ||
+        track.includes(q)
+      );
+    });
+  }, [papers, searchPaper]);
 
-  const toggleOne = (id) => {
+  // paper select
+  const allPapersChecked = useMemo(() => {
+    if (!filteredPapers.length) return false;
+    return filteredPapers.every((p) => selectedPaperIds.has(String(pickPaperId(p))));
+  }, [filteredPapers, selectedPaperIds]);
+
+  const selectedPaperCount = useMemo(() => selectedPaperIds.size, [selectedPaperIds]);
+
+  const togglePaper = (id) => {
     const key = String(id);
-    setSelectedIds((prev) => {
+    setSelectedPaperIds((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -328,10 +168,40 @@ export default function ReviewerAssignmentPage() {
     });
   };
 
-  const toggleAll = () => {
-    setSelectedIds((prev) => {
+  const toggleAllPapers = () => {
+    setSelectedPaperIds((prev) => {
       const next = new Set(prev);
-      if (allChecked) {
+      if (allPapersChecked) {
+        filteredPapers.forEach((p) => next.delete(String(pickPaperId(p))));
+      } else {
+        filteredPapers.forEach((p) => next.add(String(pickPaperId(p))));
+      }
+      return next;
+    });
+  };
+
+  // reviewer select
+  const allReviewersChecked = useMemo(() => {
+    if (!acceptedReviewers.length) return false;
+    return acceptedReviewers.every((r) => selectedReviewerIds.has(String(r.account.id)));
+  }, [acceptedReviewers, selectedReviewerIds]);
+
+  const selectedReviewerCount = useMemo(() => selectedReviewerIds.size, [selectedReviewerIds]);
+
+  const toggleReviewer = (id) => {
+    const key = String(id);
+    setSelectedReviewerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAllReviewers = () => {
+    setSelectedReviewerIds((prev) => {
+      const next = new Set(prev);
+      if (allReviewersChecked) {
         acceptedReviewers.forEach((r) => next.delete(String(r.account.id)));
       } else {
         acceptedReviewers.forEach((r) => next.add(String(r.account.id)));
@@ -340,66 +210,38 @@ export default function ReviewerAssignmentPage() {
     });
   };
 
-  const topicOptions = useMemo(() => {
-    if (!trackId) return topics || [];
-    return (topics || []).filter((t) => String(t.track_id) === String(trackId));
-  }, [topics, trackId]);
-
-  const getTopicTagsForConf = (conf) => {
-    if (!selectedConfId || String(conf?.id) !== String(selectedConfId)) return [];
-    const all = Object.values(topicsByTrack || {}).flat();
-    return all.map((x) => x?.name).filter(Boolean);
-  };
-
   const handleAssign = async () => {
-    if (!selectedConference) {
-      alert("Vui lòng chọn hội nghị.");
+    if (selectedPaperIds.size === 0) {
+      alert("Vui lòng chọn ít nhất 1 bài báo.");
       return;
     }
-    if (selectedIds.size === 0) {
+    if (selectedReviewerIds.size === 0) {
       alert("Vui lòng chọn ít nhất 1 reviewer.");
       return;
     }
 
+    const paperIds = Array.from(selectedPaperIds)
+      .map((x) => Number(x))
+      .filter((x) => !Number.isNaN(x));
+
+    const reviewerIds = Array.from(selectedReviewerIds)
+      .map((x) => Number(x))
+      .filter((x) => !Number.isNaN(x));
+
+    const ok = window.confirm(
+      `Xác nhận phân công?\n` +
+        `Reviewer đã chọn: ${reviewerIds.length}\n` +
+        `Bài báo đã chọn: ${paperIds.length}\n\n` +
+        `Lưu ý: hệ thống sẽ bỏ qua các bài đã phân công trùng.`
+    );
+    if (!ok) return;
+
     setAssigning(true);
     try {
-      const papers = await reviewerApi.getOpenPapersForBidding();
-
-      const filtered = (papers || []).filter((p) => {
-        return (
-          matchConference(p, selectedConference.id, tracks) &&
-          matchTrack(p, trackId) &&
-          matchTopic(p, topicId)
-        );
-      });
-
-      const paperIds = filtered.map((p) => p?.id).filter((x) => x !== null && x !== undefined);
-
-      if (paperIds.length === 0) {
-        alert("Không có bài nào phù hợp để phân công theo bộ lọc hiện tại.");
-        return;
-      }
-
-      const reviewerIds = Array.from(selectedIds)
-        .map((x) => Number(x))
-        .filter((x) => !Number.isNaN(x));
-
-      const chosenTrack = tracks.find((t) => String(t.id) === String(trackId));
-      const chosenTopic = (topics || []).find((t) => String(t.id) === String(topicId));
-      const ok = window.confirm(
-        `Xác nhận phân công?\n` +
-          `Hội nghị: ${selectedConference?.name || selectedConference?.conference_name}\n` +
-          `Track: ${chosenTrack?.name || (trackId ? trackId : "—")}\n` +
-          `Topic: ${chosenTopic?.name || (topicId ? topicId : "—")}\n` +
-          `Reviewer: ${reviewerIds.length}\n` +
-          `Bài phù hợp: ${paperIds.length}\n\n` +
-          `Lưu ý: hệ thống sẽ bỏ qua các bài đã phân công trùng.`
-      );
-      if (!ok) return;
-
       let created = 0;
       let skipped = 0;
 
+      // chống trùng theo reviewer (nhanh và đúng với logic hiện tại của bạn)
       for (const rid of reviewerIds) {
         let existing = [];
         try {
@@ -439,6 +281,8 @@ export default function ReviewerAssignmentPage() {
       }
 
       alert(`✅ Phân công xong!\nTạo mới: ${created}\nBỏ qua/Trùng/Lỗi: ${skipped}`);
+      // optional: reload assignments list? (ở đây chỉ reload data tổng)
+      // fetchData();
     } catch (e) {
       console.error(e);
       alert("❌ Phân công thất bại. Xem console log để biết chi tiết.");
@@ -454,7 +298,7 @@ export default function ReviewerAssignmentPage() {
           <div>
             <h2 className="text-3xl font-black text-slate-900">Phân công Reviewer</h2>
             <p className="text-slate-500 mt-1">
-              Chọn hội nghị ongoing → chọn track/topic → chọn reviewer đã chấp nhận để phân công
+              Chọn bài báo (trái) → chọn reviewer đã chấp nhận (phải) → bấm phân công
             </p>
           </div>
 
@@ -467,105 +311,124 @@ export default function ReviewerAssignmentPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: conferences */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Left: papers */}
+          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b bg-slate-50">
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">
-                  search
-                </span>
-                <input
-                  className="w-full pl-10 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-sm"
-                  placeholder="Tìm hội nghị ongoing..."
-                  value={searchConf}
-                  onChange={(e) => setSearchConf(e.target.value)}
-                />
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">
+                    search
+                  </span>
+                  <input
+                    className="w-full pl-10 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-sm"
+                    placeholder="Tìm bài báo theo tiêu đề / id / conference_id / track_id..."
+                    value={searchPaper}
+                    onChange={(e) => setSearchPaper(e.target.value)}
+                  />
+                </div>
+
+                <div className="px-3 h-10 rounded-xl border border-slate-200 bg-white flex items-center text-sm">
+                  <span className="text-slate-600 font-bold">
+                    Đã chọn: <span className="text-slate-900 font-black">{selectedPaperCount}</span>
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="max-h-[68vh] overflow-auto">
+            <div className="max-h-[70vh] overflow-auto">
               {loading ? (
-                <div className="p-6 text-slate-500">Đang tải hội nghị...</div>
-              ) : ongoingConfs.length === 0 ? (
-                <div className="p-6 text-slate-400">Không có hội nghị ongoing.</div>
+                <div className="p-6 text-slate-500">Đang tải bài báo...</div>
+              ) : filteredPapers.length === 0 ? (
+                <div className="p-6 text-slate-400">Không có bài báo nào để phân công.</div>
               ) : (
-                <ul className="divide-y">
-                  {ongoingConfs.map((c) => {
-                    const id = String(c.id);
-                    const active = String(selectedConfId) === id;
-                    const name = c.name || c.conference_name || "—";
-                    const code = c.code || c.slug || "";
-                    const topicTags = getTopicTagsForConf(c);
+                <div>
+                  <div className="sticky top-0 z-10 bg-white border-b px-5 py-3 flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="size-4 rounded border-slate-300"
+                      checked={allPapersChecked}
+                      onChange={toggleAllPapers}
+                    />
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Chọn tất cả (theo danh sách đang lọc)
+                    </span>
+                  </div>
 
-                    return (
-                      <li key={id}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedConfId(id)}
-                          className={`w-full text-left px-5 py-4 hover:bg-slate-50 transition ${
-                            active ? "bg-slate-50" : ""
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="mb-2">
-                                <span
-                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black"
-                                  style={{
-                                    backgroundColor: "rgb(var(--primary-rgb) / 0.10)",
-                                    color: "var(--primary)",
-                                    border: "1px solid rgb(var(--primary-rgb) / 0.20)",
-                                  }}
-                                >
-                                  #Hội Nghị
-                                </span>
-                              </div>
+                  <ul className="divide-y">
+                    {filteredPapers.map((p) => {
+                      const id = String(pickPaperId(p));
+                      const checked = selectedPaperIds.has(id);
+                      const title = pickPaperTitle(p);
+                      const confId = pickPaperConf(p);
+                      const trackId = pickPaperTrack(p);
+                      const submittedAt = p?.submitted_at ?? p?.submittedAt ?? p?.created_at ?? p?.createdAt ?? null;
 
-                              <p className="font-black text-slate-900 truncate">{name}</p>
-                              <p className="text-xs text-slate-500 mt-1">{code ? `Mã: ${code}` : " "}</p>
+                      return (
+                        <li key={`paper-${id}`}>
+                          <button
+                            type="button"
+                            onClick={() => togglePaper(id)}
+                            className={`w-full text-left px-5 py-4 hover:bg-slate-50 transition ${
+                              checked ? "bg-slate-50" : ""
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                className="mt-1 size-4 rounded border-slate-300"
+                                checked={checked}
+                                onChange={() => togglePaper(id)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
 
-                              {topicTags.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-1">
-                                  {topicTags.slice(0, 6).map((t, idx) => (
-                                    <span
-                                      key={`${id}-topic-${idx}`}
-                                      className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-semibold rounded"
-                                    >
-                                      {t}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="font-black text-slate-900 truncate">{title}</p>
+                                  {checked ? (
+                                    <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-green-100 text-green-700">
+                                      Đã chọn
                                     </span>
-                                  ))}
-                                  {topicTags.length > 6 ? (
-                                    <span className="text-[10px] text-slate-400">+{topicTags.length - 6}</span>
                                   ) : null}
                                 </div>
-                              ) : (
-                                <p className="mt-2 text-[11px] text-slate-400 italic">(Chưa có topic)</p>
-                              )}
-                            </div>
 
-                            {active && (
-                              <span className="px-2 py-1 text-[10px] font-bold rounded-full bg-green-100 text-green-700">
-                                Đang chọn
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                                <div className="mt-1 text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+                                  <span>
+                                    <b>ID:</b> {id}
+                                  </span>
+                                  {confId != null ? (
+                                    <span>
+                                      <b>Conference:</b> {String(confId)}
+                                    </span>
+                                  ) : null}
+                                  {trackId != null ? (
+                                    <span>
+                                      <b>Track:</b> {String(trackId)}
+                                    </span>
+                                  ) : null}
+                                  <span>
+                                    <b>Submitted:</b> {fmtDateTime(submittedAt)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Right */}
-          <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Right: reviewers */}
+          <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-5 border-b bg-white">
               <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Hội nghị đã chọn</p>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Reviewer đã chấp nhận</p>
                   <p className="text-lg font-black text-slate-900 mt-1">
-                    {selectedConference?.name || selectedConference?.conference_name || "Chưa chọn hội nghị"}
+                    {acceptedReviewers.length ? `${acceptedReviewers.length} reviewer` : "Chưa có reviewer"}
                   </p>
                 </div>
 
@@ -573,64 +436,17 @@ export default function ReviewerAssignmentPage() {
                   <div className="px-3 h-11 rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px] text-slate-500">groups</span>
                     <span className="text-sm text-slate-600 font-bold">
-                      Đã mời: <span className="text-slate-900 font-black">{invitedCountForSelected}</span>
+                      Đã chọn: <span className="text-slate-900 font-black">{selectedReviewerCount}</span>
                     </span>
                   </div>
 
                   <button
                     onClick={handleAssign}
                     className="px-5 h-11 bg-rose-600 text-white rounded-xl font-bold shadow hover:opacity-95 disabled:opacity-60"
-                    disabled={!selectedConference || selectedCount === 0 || assigning}
+                    disabled={assigning || selectedReviewerCount === 0 || selectedPaperCount === 0}
                   >
-                    {assigning ? "Đang phân công..." : `Phân công (${String(selectedCount).padStart(2, "0")})`}
+                    {assigning ? "Đang phân công..." : "Phân công"}
                   </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase">Track</label>
-                  <select
-                    className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-sm bg-white"
-                    value={trackId}
-                    onChange={(e) => {
-                      setTrackId(e.target.value);
-                      setTopicId("");
-                    }}
-                    disabled={!selectedConference || tracks.length === 0}
-                  >
-                    <option value="">
-                      {!selectedConference ? "Chọn hội nghị trước" : tracks.length ? "Chọn track" : "Chưa có track"}
-                    </option>
-                    {tracks.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase">Topic</label>
-                  <select
-                    className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-sm bg-white"
-                    value={topicId}
-                    onChange={(e) => setTopicId(e.target.value)}
-                    disabled={!selectedConference || topicOptions.length === 0}
-                  >
-                    <option value="">
-                      {!selectedConference
-                        ? "Chọn hội nghị trước"
-                        : topicOptions.length
-                        ? "Chọn topic"
-                        : "Chưa có topic"}
-                    </option>
-                    {topicOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
             </div>
@@ -644,9 +460,9 @@ export default function ReviewerAssignmentPage() {
                       <input
                         type="checkbox"
                         className="size-4 rounded border-slate-300"
-                        checked={allChecked}
-                        onChange={toggleAll}
-                        disabled={!selectedConference || acceptedReviewers.length === 0}
+                        checked={allReviewersChecked}
+                        onChange={toggleAllReviewers}
+                        disabled={acceptedReviewers.length === 0}
                       />
                     </th>
                     <Th>Reviewer</Th>
@@ -656,13 +472,7 @@ export default function ReviewerAssignmentPage() {
                 </thead>
 
                 <tbody className="divide-y">
-                  {!selectedConference ? (
-                    <tr>
-                      <td colSpan={4} className="px-5 py-10 text-center text-slate-400">
-                        Vui lòng chọn 1 hội nghị ở bên trái.
-                      </td>
-                    </tr>
-                  ) : loading ? (
+                  {loading ? (
                     <tr>
                       <td colSpan={4} className="px-5 py-10 text-center text-slate-500">
                         Đang tải reviewer...
@@ -689,8 +499,8 @@ export default function ReviewerAssignmentPage() {
                             <input
                               type="checkbox"
                               className="size-4 rounded border-slate-300"
-                              checked={selectedIds.has(id)}
-                              onChange={() => toggleOne(id)}
+                              checked={selectedReviewerIds.has(id)}
+                              onChange={() => toggleReviewer(id)}
                             />
                           </td>
 
@@ -730,26 +540,25 @@ export default function ReviewerAssignmentPage() {
             <div className="p-4 border-t bg-white flex items-center justify-between">
               <p className="text-sm text-slate-500">
                 Đã chọn{" "}
-                <span className="font-black text-slate-900">{String(selectedCount).padStart(2, "0")}</span>{" "}
+                <span className="font-black text-slate-900">{String(selectedReviewerCount).padStart(2, "0")}</span>{" "}
                 reviewer
               </p>
               <button
                 className="px-4 h-10 rounded-xl border font-bold text-slate-700 hover:bg-slate-50"
-                onClick={() => setSelectedIds(new Set())}
-                disabled={!selectedCount || assigning}
+                onClick={() => setSelectedReviewerIds(new Set())}
+                disabled={!selectedReviewerCount || assigning}
               >
-                Bỏ chọn
+                Bỏ chọn reviewer
               </button>
             </div>
           </div>
         </div>
 
-        {selectedConference && tracks.length === 0 ? (
-          <div className="text-xs text-slate-500">
-            * Không thấy track? Kiểm tra endpoint{" "}
-            <code className="mx-1">GET /conference/api/tracks/conference/{`{conferenceId}`}</code>.
-          </div>
-        ) : null}
+        <div className="text-xs text-slate-500">
+          * Nguồn bài báo: <code className="mx-1">GET /submission/submissions/open-for-bidding</code> (submission-service)
+          <br />
+          * Nguồn reviewer: invitations <code className="mx-1">ACCEPTED</code> + accounts từ identity-service
+        </div>
       </div>
     </div>
   );

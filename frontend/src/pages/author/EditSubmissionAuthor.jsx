@@ -55,10 +55,14 @@ export default function EditSubmissionAuthor() {
     });
   }, [author]);
 
+  const returnTo = sp.get("returnTo");
   const goBack = () => {
-    if (from === "edit") return navigate(`/author/submissions/${paperId}/edit`);
-    return navigate(`/author/submissions/${paperId}`);
-  };
+  if (returnTo) return navigate(returnTo);
+  if (from === "camera-ready") return navigate(`/author/camera-ready/${paperId}`);
+  if (from === "edit") return navigate(`/author/submissions/${paperId}/edit`);
+  return navigate(`/author/submissions/${paperId}`);
+};
+
 
   const onSubmit = async (e) => {
     e.preventDefault();

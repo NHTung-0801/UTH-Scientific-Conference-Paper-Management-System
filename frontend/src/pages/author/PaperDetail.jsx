@@ -9,6 +9,7 @@ import {
   uploadNewVersion,
   uploadCameraReady,
 } from "../../api/submissionApi";
+import axiosClient from "../../api/axiosClient";
 import { useAuth } from "../../context/AuthContext";
 
 const MAX_MB = 20;
@@ -22,6 +23,26 @@ const STATUS_META = {
   WITHDRAWN: { label: "Rút bài", tone: "slate" },
   REVISION_REQUIRED: { label: "Cần sửa", tone: "violet" },
 };
+
+function formatDateOnly(iso) {
+  if (!iso) return "--";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function daysLeft(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const diff = t - Date.now();
+  const d = Math.ceil(diff / (1000 * 60 * 60 * 24));
+  return d;
+}
+
 
 function normalizeStatus(s) {
   return String(s || "").toUpperCase();
@@ -115,6 +136,10 @@ export default function PaperDetail() {
   const { id } = useParams();
   const paperId = Number(id);
 
+const [phase, setPhase] = useState(null);
+const [phaseErr, setPhaseErr] = useState("");
+
+
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -173,9 +198,27 @@ export default function PaperDetail() {
 
   const canCameraReady = status === "ACCEPTED";
 
-  // rule: trước khi nộp camera-ready cần đủ họ tên + email ở profile
-  const profileOk = !!(user?.full_name && user?.email);
-  const blockCamera = canCameraReady && !profileOk;
+  const cameraOpen = !!phase?.camera_ready_open;
+const cameraDeadline = phase?.camera_ready_deadline || null;
+const deadlinePassed = useMemo(() => {
+  if (!cameraDeadline) return false;
+  const t = new Date(cameraDeadline).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() > t;
+}, [cameraDeadline]);
+
+const profileOk = !!(user?.full_name && user?.email);
+const blockCamera = canCameraReady && !profileOk;
+
+const cameraReadyBlockedReason = useMemo(() => {
+  if (!canCameraReady) return "Chỉ bài ACCEPTED mới được nộp Camera-ready.";
+  if (!cameraOpen) return "Camera-ready đang đóng cho hội nghị này.";
+  if (deadlinePassed) return "Đã quá hạn nộp Camera-ready.";
+  if (!profileOk) return "Bạn cần cập nhật đầy đủ Họ tên + Email trước khi nộp Camera-ready.";
+  return "";
+}, [canCameraReady, cameraOpen, deadlinePassed, profileOk]);
+
+const canUploadCameraReady = canCameraReady && cameraOpen && !deadlinePassed && profileOk;
 
   const versions = useMemo(() => {
     const v =
@@ -200,6 +243,12 @@ export default function PaperDetail() {
 
   const meta = STATUS_META[status] || { label: status || "UNKNOWN", tone: "slate" };
 
+  const latestCameraReady = useMemo(() => {
+  const cams = versions.filter((x) => x?.is_camera_ready);
+  if (cams.length === 0) return null;
+  return cams.sort((a, b) => (b.version_number || 0) - (a.version_number || 0))[0];
+ }, [versions]);
+
   const load = async () => {
     try {
       setLoading(true);
@@ -217,6 +266,14 @@ export default function PaperDetail() {
           setConfName("");
           setConfInfo(null);
         }
+
+        try {
+        const ph = await axiosClient.get(`/conference/api/conferences/${p.conference_id}/phase`);
+        setPhase(ph);
+      } catch (e) {
+        setPhase(null);
+        setPhaseErr(e?.response?.data?.detail || "Không lấy được trạng thái Camera-ready của hội nghị.");
+      }
       }
     } catch (e) {
       setErr(e?.response?.data?.detail || "Không tải được chi tiết bài báo.");
@@ -276,6 +333,9 @@ export default function PaperDetail() {
   };
 
   const onUploadCameraReady = async (file) => {
+    if (!canUploadCameraReady) {
+    return setErr(cameraReadyBlockedReason || "Không thể nộp Camera-ready lúc này.");
+   }
     const msg = fileOkPdf(file);
     if (msg) return setErr(msg);
     if (blockCamera) return setErr("Bạn cần cập nhật đầy đủ Họ tên + Email trước khi nộp Camera-ready.");
@@ -519,30 +579,103 @@ export default function PaperDetail() {
                 color: "var(--primary)",
               }}
             >
-              <span className="material-symbols-outlined text-[32px]">verified</span>
+              <span className="material-symbols-outlined text-[32px]">
+                {latestCameraReady ? "task_alt" : "verified"}
+              </span>
             </div>
 
-            <div>
-              <h3 className="text-xl font-black mb-2" style={{ color: "var(--text)" }}>
-                Sẵn sàng nộp bản Camera-ready
+            <div className="space-y-1">
+              <h3 className="text-xl font-black" style={{ color: "var(--text)" }}>
+                {latestCameraReady ? "Bạn đã nộp Camera-ready" : "Sẵn sàng nộp bản Camera-ready"}
               </h3>
-              <p className="max-w-md" style={{ color: "var(--muted)" }}>
-                Chúc mừng! Bài báo của bạn đã được chấp nhận. Vui lòng tải lên bản in cuối cùng (Camera-ready PDF).
-              </p>
-            </div>
 
-            {blockCamera && (
-              <div
-                className="max-w-md p-4 rounded-2xl text-sm font-semibold border"
-                style={{
-                  background: "rgb(245 158 11 / 0.12)",
-                  borderColor: "rgb(245 158 11 / 0.25)",
-                  color: "rgb(245 158 11 / 0.95)",
-                }}
-              >
-                Bạn cần cập nhật đầy đủ thông tin tài khoản (Họ tên + Email) trước khi nộp Camera-ready.
+              <p className="max-w-xl" style={{ color: "var(--muted)" }}>
+                {latestCameraReady
+                  ? "Bạn có thể nộp lại phiên bản camera-ready (nếu hội nghị còn mở và chưa hết hạn)."
+                  : "Chúc mừng! Bài báo của bạn đã được chấp nhận. Vui lòng tải lên bản in cuối (Camera-ready PDF) trước hạn chót."}
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-2 justify-center items-center pt-2">
+                <span
+                  className="px-3 py-1 rounded-full text-xs font-black border"
+                  style={{
+                    background: cameraOpen ? "rgb(34 197 94 / 0.12)" : "rgb(245 158 11 / 0.12)",
+                    borderColor: cameraOpen ? "rgb(34 197 94 / 0.25)" : "rgb(245 158 11 / 0.25)",
+                    color: cameraOpen ? "rgb(34 197 94 / 0.95)" : "rgb(245 158 11 / 0.95)",
+                  }}
+                >
+                  {cameraOpen ? "Camera-ready: ĐANG MỞ" : "Camera-ready: ĐANG ĐÓNG"}
+                </span>
+
+                <span
+                  className="px-3 py-1 rounded-full text-xs font-black border"
+                  style={{
+                    background: deadlinePassed ? "rgb(244 63 94 / 0.12)" : "rgb(var(--primary-rgb) / 0.10)",
+                    borderColor: deadlinePassed ? "rgb(244 63 94 / 0.25)" : "rgb(var(--primary-rgb) / 0.25)",
+                    color: deadlinePassed ? "rgb(244 63 94 / 0.95)" : "var(--primary)",
+                  }}
+                  title={cameraDeadline ? `Deadline: ${formatDateOnly(cameraDeadline)}` : "Chưa đặt deadline"}
+                >
+                  Hạn chót: {formatDateOnly(cameraDeadline)}
+                  {cameraDeadline && !deadlinePassed && daysLeft(cameraDeadline) !== null ? (
+                    <span className="ml-2 opacity-80">({daysLeft(cameraDeadline)} ngày)</span>
+                  ) : null}
+                </span>
               </div>
-            )}
+
+              {phaseErr ? (
+                <div
+                  className="max-w-xl mt-3 p-3 rounded-xl text-sm font-semibold border"
+                  style={{
+                    background: "rgb(245 158 11 / 0.12)",
+                    borderColor: "rgb(245 158 11 / 0.25)",
+                    color: "rgb(245 158 11 / 0.95)",
+                  }}
+                >
+                  {phaseErr} (Backend vẫn sẽ kiểm tra khi bạn upload.)
+                </div>
+              ) : null}
+
+              {!canUploadCameraReady && cameraReadyBlockedReason ? (
+                <div
+                  className="max-w-xl mt-3 p-3 rounded-xl text-sm font-semibold border"
+                  style={{
+                    background: "rgb(245 158 11 / 0.12)",
+                    borderColor: "rgb(245 158 11 / 0.25)",
+                    color: "rgb(245 158 11 / 0.95)",
+                  }}
+                >
+                  {cameraReadyBlockedReason}
+                </div>
+              ) : null}
+
+              {latestCameraReady ? (
+                <div className="mt-3 flex flex-col sm:flex-row items-center justify-center gap-2">
+                  <a
+                    href={toDownloadUrl(latestCameraReady.file_url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 h-10 rounded-lg border font-black text-sm flex items-center gap-2 transition"
+                    style={{
+                      background: "var(--surface)",
+                      borderColor: "var(--border)",
+                      color: "var(--text)",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgb(var(--primary-rgb) / 0.06)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "var(--surface)")}
+                  >
+                    <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--muted)" }}>
+                      download
+                    </span>
+                    Xem/Tải bản Camera-ready
+                  </a>
+
+                  <span className="text-xs" style={{ color: "var(--muted)" }}>
+                    v{latestCameraReady.version_number} • {latestCameraReady.created_at ? formatDate(latestCameraReady.created_at) : "--"}
+                  </span>
+                </div>
+              ) : null}
+            </div>
 
             <input
               ref={fileCameraRef}
@@ -552,12 +685,22 @@ export default function PaperDetail() {
               onChange={(e) => onUploadCameraReady(e.target.files?.[0])}
             />
 
-            <PrimaryButton disabled={busy || blockCamera} onClick={() => fileCameraRef.current?.click()}>
+            <PrimaryButton
+              disabled={busy || !canUploadCameraReady}
+              onClick={() => {
+                if (!canUploadCameraReady) {
+                  setErr(cameraReadyBlockedReason || "Không thể nộp Camera-ready lúc này.");
+                  return;
+                }
+                fileCameraRef.current?.click();
+              }}
+            >
               <span className="material-symbols-outlined">upload_file</span>
-              Tải lên Camera-ready PDF
+              {latestCameraReady ? "Nộp lại Camera-ready" : "Tải lên Camera-ready PDF"}
             </PrimaryButton>
           </div>
         )}
+
 
         {/* Authors card */}
         <div

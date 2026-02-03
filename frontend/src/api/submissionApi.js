@@ -2,8 +2,8 @@
 import axiosClient from "./axiosClient";
 
 const BASE = "/submission/submissions";
+const unwrap = (res) => (res?.data !== undefined ? res.data : res);
 
-// axiosClient đã unwrap response.data rồi => ở đây return thẳng
 export async function listMySubmissions() {
   return axiosClient.get(BASE);
 }
@@ -60,6 +60,20 @@ export const updateSubmissionAuthor = (paperId, authorId, authorData) => {
   return axiosClient.put(`${BASE}/${paperId}/authors/${authorId}`, authorData);
 };
 
+export async function chairListCameraReady(conferenceId) {
+  return axiosClient.get(`${BASE}/conference/${conferenceId}/camera-ready`);
+}
+
+export async function chairGetProceedings(conferenceId) {
+  return axiosClient.get(`${BASE}/conference/${conferenceId}/proceedings`);
+}
+
+export const chairApi = {
+  decidePaper: async (paperId, payload) => {
+    const res = await axiosClient.put(`${BASE}/${paperId}/decision`, payload);
+    return unwrap(res);
+  },
+};
 export async function listOpenForBidding() {
   return axiosClient.get(`${BASE}/open-for-bidding`);
 }

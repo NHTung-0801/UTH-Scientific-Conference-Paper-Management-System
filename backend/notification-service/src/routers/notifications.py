@@ -20,6 +20,8 @@ router = APIRouter(
 
 INTERNAL_KEY = os.getenv("INTERNAL_KEY", "")
 
+from ..security.deps import get_current_payload, require_roles
+
 # =========================================================
 # 1. API Gửi thông báo (Internal & External)
 # =========================================================

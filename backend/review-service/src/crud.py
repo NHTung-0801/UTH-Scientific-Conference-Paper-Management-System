@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from sqlalchemy import or_
 from src import models, schemas
+from sqlalchemy import func, case
+from datetime import datetime
 
 # -------- Assignments --------
 def create_assignment(db: Session, data: schemas.AssignmentCreate) -> models.Assignment:
@@ -203,3 +205,92 @@ def create_review_evaluation(db: Session, review_id: int, data: schemas.Evaluati
 
 def list_review_evaluations(db: Session, review_id: int):
     return db.query(models.ReviewEvaluation).filter(models.ReviewEvaluation.review_id == review_id).all()
+
+def chair_list_papers_review_summary(db: Session, paper_id: int | None = None):
+    """
+    Trả về list paper summary (paper_id, assigned_count, submitted_count, all_submitted,...)
+    Không gọi service ngoài.
+    """
+
+    # Subquery: với mỗi assignment -> có submitted review chưa + latest submitted_at
+    # submitted nếu exists review where is_draft=false OR submitted_at not null
+    submitted_case = case(
+        (
+            (models.Review.is_draft == False) | (models.Review.submitted_at.isnot(None)),
+            1,
+        ),
+        else_=0,
+    )
+
+    q = (
+        db.query(
+            models.Assignment.paper_id.label("paper_id"),
+            models.Assignment.id.label("assignment_id"),
+            models.Assignment.reviewer_id.label("reviewer_id"),
+            models.Assignment.status.label("assignment_status"),
+            models.Assignment.due_date.label("due_date"),
+            models.Assignment.response_date.label("response_date"),
+            func.max(submitted_case).label("has_submitted_review_int"),
+            func.max(models.Review.submitted_at).label("latest_submitted_at"),
+        )
+        .outerjoin(models.Review, models.Review.assignment_id == models.Assignment.id)
+        .group_by(
+            models.Assignment.paper_id,
+            models.Assignment.id,
+            models.Assignment.reviewer_id,
+            models.Assignment.status,
+            models.Assignment.due_date,
+            models.Assignment.response_date,
+        )
+        .order_by(models.Assignment.paper_id.desc(), models.Assignment.id.desc())
+    )
+
+    if paper_id is not None:
+        q = q.filter(models.Assignment.paper_id == paper_id)
+
+    rows = q.all()
+
+    # group by paper_id in python
+    by_paper = {}
+    for r in rows:
+        pid = int(r.paper_id)
+        if pid not in by_paper:
+            by_paper[pid] = {
+                "paper_id": pid,
+                "assignments": [],
+                "assigned_count": 0,
+                "submitted_count": 0,
+                "latest_submitted_at": None,
+            }
+
+        has_submitted = bool(r.has_submitted_review_int == 1)
+        item = {
+            "assignment_id": int(r.assignment_id),
+            "reviewer_id": int(r.reviewer_id),
+            "assignment_status": str(r.assignment_status),
+            "due_date": r.due_date,
+            "response_date": r.response_date,
+            "has_submitted_review": has_submitted,
+            "submitted_at": r.latest_submitted_at,
+        }
+
+        by_paper[pid]["assignments"].append(item)
+        by_paper[pid]["assigned_count"] += 1
+        if has_submitted:
+            by_paper[pid]["submitted_count"] += 1
+
+        # latest submitted time of paper
+        if r.latest_submitted_at:
+            cur = by_paper[pid]["latest_submitted_at"]
+            if (cur is None) or (r.latest_submitted_at > cur):
+                by_paper[pid]["latest_submitted_at"] = r.latest_submitted_at
+
+    # finalize all_submitted
+    out = []
+    for pid, obj in by_paper.items():
+        obj["all_submitted"] = (obj["assigned_count"] > 0 and obj["submitted_count"] == obj["assigned_count"])
+        out.append(obj)
+
+    # sort paper_id desc
+    out.sort(key=lambda x: x["paper_id"], reverse=True)
+    return out

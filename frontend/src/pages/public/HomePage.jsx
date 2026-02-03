@@ -1,44 +1,79 @@
+// src/pages/public/HomePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import conferenceApi from "../../api/conferenceApi";
 import topicApi from "../../api/topicApi";
 
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8080";
+
+function toPublicFileUrl(raw) {
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  let p = String(raw).trim();
+  if (!p.startsWith("/")) p = `/${p}`;
+  if (!p.startsWith("/uploads/")) p = `/uploads${p}`;
+  return `${API_BASE}${encodeURI(p)}`;
+}
+
+function fmtDate(d) {
+  if (!d) return "--";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "--";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
 
 const HomePage = () => {
-    const [conferences, setConferences] = useState([]);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // =======================
+  // Proceedings list state
+  // =======================
+  const [proLoading, setProLoading] = useState(false);
+  const [proErr, setProErr] = useState("");
+  const [proceedings, setProceedings] = useState([]);
+  const [proQ, setProQ] = useState("");
+
+  // =======================
+  // Ongoing conferences state
+  // =======================
+  const [conferences, setConferences] = useState([]);
   const [loadingOngoing, setLoadingOngoing] = useState(true);
-
-  // map: confId -> tracks[]
   const [tracksByConf, setTracksByConf] = useState({});
-  // map: confId -> topicTags[] (unique)
   const [topicTagsByConf, setTopicTagsByConf] = useState({});
-
-  const API_BASE = process.env.REACT_APP_API_URL || "http://127.0.0.1:8080";
 
   const buildLogoUrl = (logo) => {
     if (!logo) return null;
-    if (logo.startsWith("http")) return logo;
+    if (String(logo).startsWith("http")) return logo;
 
-    if (logo.startsWith("/static/")) return `${API_BASE}/conference${logo}`;
-    if (logo.startsWith("static/")) return `${API_BASE}/conference/${logo}`;
+    // giữ logic cũ của bạn
+    if (String(logo).startsWith("/static/")) return `${API_BASE}/conference${logo}`;
+    if (String(logo).startsWith("static/")) return `${API_BASE}/conference/${logo}`;
     return null;
   };
 
-  const now = new Date();
+  // ===== Proceedings fetch
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setProLoading(true);
+        setProErr("");
+        const list = await conferenceApi.getPublishedProceedingsForHome?.();
+        setProceedings(Array.isArray(list) ? list : []);
+      } catch (e) {
+        setProceedings([]);
+        setProErr(e?.response?.data?.detail || e?.message || "Không tải được danh sách kỷ yếu.");
+      } finally {
+        setProLoading(false);
+      }
+    };
+    run();
+  }, []);
 
-  const getStatus = (conf) => {
-    const start = new Date(conf.start_date);
-    const end = new Date(conf.end_date);
-    if (now < start) return "UPCOMING";
-    if (now > end) return "ENDED";
-    return "ONGOING";
-  };
-
-  const ongoingConferences = useMemo(() => {
-    return (conferences || []).filter((c) => getStatus(c) === "ONGOING");
-  }, [conferences]);
-
-  // load conferences + load tracks/topics cho ongoing conf
+  // ===== Ongoing conferences fetch (+ tracks + topics)
   useEffect(() => {
     const run = async () => {
       setLoadingOngoing(true);
@@ -47,9 +82,17 @@ const HomePage = () => {
         const list = Array.isArray(res) ? res : [];
         setConferences(list);
 
+        const now = new Date();
+        const getStatus = (conf) => {
+          const start = new Date(conf.start_date);
+          const end = new Date(conf.end_date);
+          if (now < start) return "UPCOMING";
+          if (now > end) return "ENDED";
+          return "ONGOING";
+        };
+
         const ongoing = list.filter((c) => getStatus(c) === "ONGOING");
 
-        // load tracks theo conf
         const tracksMap = {};
         const tagsMap = {};
 
@@ -60,7 +103,6 @@ const HomePage = () => {
               const trackList = Array.isArray(tracks) ? tracks : [];
               tracksMap[conf.id] = trackList;
 
-              // load topics theo từng track để lấy tags
               const allTopics = await Promise.all(
                 trackList.map(async (tr) => {
                   try {
@@ -73,13 +115,9 @@ const HomePage = () => {
               );
 
               const flat = allTopics.flat();
-              // lấy name làm tag (unique)
-              const uniq = Array.from(
-                new Set(flat.map((t) => t?.name).filter(Boolean))
-              );
-
+              const uniq = Array.from(new Set(flat.map((t) => t?.name).filter(Boolean)));
               tagsMap[conf.id] = uniq;
-            } catch (e) {
+            } catch {
               tracksMap[conf.id] = [];
               tagsMap[conf.id] = [];
             }
@@ -88,7 +126,7 @@ const HomePage = () => {
 
         setTracksByConf(tracksMap);
         setTopicTagsByConf(tagsMap);
-      } catch (e) {
+      } catch {
         setConferences([]);
         setTracksByConf({});
         setTopicTagsByConf({});
@@ -98,8 +136,47 @@ const HomePage = () => {
     };
 
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ===== hash scroll to proceedings
+  useEffect(() => {
+    if (location.hash !== "#proceedings") return;
+    if (proLoading) return;
+
+    const t = setTimeout(() => {
+      const el = document.getElementById("proceedings");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const input = document.getElementById("proceedings-search");
+      input?.focus();
+    }, 50);
+
+    return () => clearTimeout(t);
+  }, [location.hash, proLoading]);
+
+  const filteredProceedings = useMemo(() => {
+    const k = proQ.trim().toLowerCase();
+    if (!k) return proceedings;
+
+    return proceedings.filter((x) => {
+      const t = String(x?.proceedings_title || x?.title || "").toLowerCase();
+      const c = String(x?.conference_name || "").toLowerCase();
+      const pub = String(x?.publisher || "").toLowerCase();
+      const isbn = String(x?.isbn_issn || "").toLowerCase();
+      return t.includes(k) || c.includes(k) || pub.includes(k) || isbn.includes(k);
+    });
+  }, [proceedings, proQ]);
+
+  const ongoingConferences = useMemo(() => {
+    const now = new Date();
+    const getStatus = (conf) => {
+      const start = new Date(conf.start_date);
+      const end = new Date(conf.end_date);
+      if (now < start) return "UPCOMING";
+      if (now > end) return "ENDED";
+      return "ONGOING";
+    };
+    return (conferences || []).filter((c) => getStatus(c) === "ONGOING");
+  }, [conferences]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-text-dark dark:text-white antialiased overflow-x-hidden">
@@ -109,56 +186,35 @@ const HomePage = () => {
           <div className="flex items-center justify-between px-4 py-3 md:px-10 max-w-[1440px] mx-auto w-full">
             <div className="flex items-center gap-4 text-[#181111] dark:text-white">
               <div className="size-8 text-primary">
-                <svg
-                  fill="currentColor"
-                  viewBox="0 0 48 48"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
+                <svg fill="currentColor" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                   <path d="M24 45.8096C19.6865 45.8096 15.4698 44.5305 11.8832 42.134C8.29667 39.7376 5.50128 36.3314 3.85056 32.3462C2.19985 28.361 1.76794 23.9758 2.60947 19.7452C3.451 15.5145 5.52816 11.6284 8.57829 8.5783C11.6284 5.52817 15.5145 3.45101 19.7452 2.60948C23.9758 1.76795 28.361 2.19986 32.3462 3.85057C36.3314 5.50129 39.7376 8.29668 42.134 11.8833C44.5305 15.4698 45.8096 19.6865 45.8096 24L24 24L24 45.8096Z"></path>
                 </svg>
               </div>
-              <h2 className="text-xl font-bold leading-tight tracking-[-0.015em]">
-                UTH-ConfMS
-              </h2>
+              <h2 className="text-xl font-bold leading-tight tracking-[-0.015em]">UTH-ConfMS</h2>
             </div>
 
             <div className="hidden md:flex flex-1 justify-end gap-8 items-center">
               <div className="flex items-center gap-6 lg:gap-9">
-                <a
-                  className="text-sm font-medium leading-normal hover:text-primary transition-colors"
-                  href="#"
-                >
+                <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">
                   Trang chủ
                 </a>
-                <a
-                  className="text-sm font-medium leading-normal hover:text-primary transition-colors"
-                  href="#tracks"
-                >
+                <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#tracks">
                   Chuyên đề
                 </a>
-                <a
-                  className="text-sm font-medium leading-normal hover:text-primary transition-colors"
-                  href="#deadlines"
-                >
+                <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#deadlines">
                   Hạn nộp
                 </a>
-                <a
-                  className="text-sm font-medium leading-normal hover:text-primary transition-colors"
-                  href="#"
-                >
+                <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#proceedings">
+                  Kỷ yếu
+                </a>
+                <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">
                   Hỏi đáp
                 </a>
-
-                {/* ✅ dùng Link để đúng React Router */}
-                <Link
-                  className="text-sm font-medium leading-normal hover:text-primary transition-colors"
-                  to="/login"
-                >
+                <Link className="text-sm font-medium leading-normal hover:text-primary transition-colors" to="/login">
                   Đăng nhập
                 </Link>
               </div>
 
-              {/* ✅ Button đăng ký */}
               <Link
                 to="/register"
                 className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-6 bg-primary hover:bg-red-700 transition-colors text-white text-sm font-bold leading-normal tracking-[0.015em]"
@@ -194,12 +250,8 @@ const HomePage = () => {
                 <div className="flex flex-col gap-6 lg:w-1/2 lg:pr-10">
                   <div className="flex flex-col gap-4 text-left">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 dark:bg-primary/20 text-primary w-fit">
-                      <span className="material-symbols-outlined text-[18px]">
-                        calendar_month
-                      </span>
-                      <span className="text-xs font-bold uppercase tracking-wider">
-                        12-14 Tháng 10, 2024
-                      </span>
+                      <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+                      <span className="text-xs font-bold uppercase tracking-wider">12-14 Tháng 10, 2024</span>
                     </div>
 
                     <h1 className="text-4xl font-black leading-tight tracking-[-0.033em] md:text-5xl lg:text-6xl text-[#181111] dark:text-white">
@@ -207,14 +259,12 @@ const HomePage = () => {
                     </h1>
 
                     <h2 className="text-lg text-gray-600 dark:text-gray-300 font-normal leading-relaxed">
-                      Thúc đẩy Đổi mới thông qua Nghiên cứu &amp; Hợp tác. Gặp gỡ các
-                      học giả hàng đầu và chuyên gia trong ngành tại Hội trường Chính.
+                      Thúc đẩy Đổi mới thông qua Nghiên cứu &amp; Hợp tác. Gặp gỡ các học giả hàng đầu và chuyên gia trong
+                      ngành tại Hội trường Chính.
                     </h2>
 
                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
-                      <span className="material-symbols-outlined text-[20px]">
-                        location_on
-                      </span>
+                      <span className="material-symbols-outlined text-[20px]">location_on</span>
                       <span>Hội trường Chính, Đại học Công nghệ UTH</span>
                     </div>
                   </div>
@@ -240,7 +290,7 @@ const HomePage = () => {
             </div>
           </section>
 
-          {/* ===== TRACKS ===== */}
+          {/* ===== TRACKS (tích hợp lại từ code cũ) ===== */}
           <section
             className="w-full px-4 py-12 md:px-10 lg:px-20 bg-white dark:bg-[#1a0f0f] border-y border-[#f4f0f0] dark:border-[#2a1a1a]"
             id="tracks"
@@ -252,14 +302,10 @@ const HomePage = () => {
                     Chuyên đề Hội nghị
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400 text-lg">
-                    Chúng tôi kính mời các tác giả gửi bài cho các chuyên đề nghiên cứu
-                    sau. Vui lòng đảm bảo nội dung phù hợp với hướng dẫn trước khi nộp.
+                    Chúng tôi kính mời các tác giả gửi bài cho các chuyên đề nghiên cứu sau. Vui lòng đảm bảo nội dung phù hợp với hướng dẫn trước khi nộp.
                   </p>
                 </div>
-                <a
-                  className="flex items-center gap-2 text-primary font-bold hover:underline whitespace-nowrap"
-                  href="#"
-                >
+                <a className="flex items-center gap-2 text-primary font-bold hover:underline whitespace-nowrap" href="#">
                   Xem tất cả chuyên đề
                   <span className="material-symbols-outlined text-sm">arrow_forward</span>
                 </a>
@@ -272,12 +318,9 @@ const HomePage = () => {
                     <span className="material-symbols-outlined text-[28px]">smart_toy</span>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <h3 className="text-xl font-bold leading-tight dark:text-white">
-                      Trí tuệ nhân tạo
-                    </h3>
+                    <h3 className="text-xl font-bold leading-tight dark:text-white">Trí tuệ nhân tạo</h3>
                     <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
-                      Học máy, robot, thị giác máy tính và các ứng dụng mạng nơ-ron trong
-                      công nghiệp hiện đại.
+                      Học máy, robot, thị giác máy tính và các ứng dụng mạng nơ-ron trong công nghiệp hiện đại.
                     </p>
                   </div>
                   <a className="mt-auto pt-2 text-sm font-semibold text-primary group-hover:underline" href="#">
@@ -291,12 +334,9 @@ const HomePage = () => {
                     <span className="material-symbols-outlined text-[28px]">eco</span>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <h3 className="text-xl font-bold leading-tight dark:text-white">
-                      Năng lượng bền vững
-                    </h3>
+                    <h3 className="text-xl font-bold leading-tight dark:text-white">Năng lượng bền vững</h3>
                     <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
-                      Tài nguyên tái tạo, công nghệ xanh, lưới điện thông minh và đánh giá
-                      tác động môi trường.
+                      Tài nguyên tái tạo, công nghệ xanh, lưới điện thông minh và đánh giá tác động môi trường.
                     </p>
                   </div>
                   <a className="mt-auto pt-2 text-sm font-semibold text-primary group-hover:underline" href="#">
@@ -307,17 +347,12 @@ const HomePage = () => {
                 {/* Card 3 */}
                 <div className="group flex flex-col gap-4 rounded-xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-background-light dark:bg-[#211111] p-6 transition-all hover:shadow-lg hover:border-primary/30">
                   <div className="size-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
-                    <span className="material-symbols-outlined text-[28px]">
-                      medical_services
-                    </span>
+                    <span className="material-symbols-outlined text-[28px]">medical_services</span>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <h3 className="text-xl font-bold leading-tight dark:text-white">
-                      Khoa học Y sinh
-                    </h3>
+                    <h3 className="text-xl font-bold leading-tight dark:text-white">Khoa học Y sinh</h3>
                     <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
-                      Nghiên cứu lâm sàng, tin sinh học, công nghệ y tế và các đổi mới trong
-                      y tế công cộng.
+                      Nghiên cứu lâm sàng, tin sinh học, công nghệ y tế và các đổi mới trong y tế công cộng.
                     </p>
                   </div>
                   <a className="mt-auto pt-2 text-sm font-semibold text-primary group-hover:underline" href="#">
@@ -331,12 +366,9 @@ const HomePage = () => {
                     <span className="material-symbols-outlined text-[28px]">engineering</span>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <h3 className="text-xl font-bold leading-tight dark:text-white">
-                      Kỹ thuật Xây dựng
-                    </h3>
+                    <h3 className="text-xl font-bold leading-tight dark:text-white">Kỹ thuật Xây dựng</h3>
                     <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
-                      Quy hoạch đô thị, kết cấu công trình, thành phố thông minh và vật liệu
-                      xây dựng bền vững.
+                      Quy hoạch đô thị, kết cấu công trình, thành phố thông minh và vật liệu xây dựng bền vững.
                     </p>
                   </div>
                   <a className="mt-auto pt-2 text-sm font-semibold text-primary group-hover:underline" href="#">
@@ -366,9 +398,7 @@ const HomePage = () => {
                     <span className="material-symbols-outlined text-[28px]">school</span>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <h3 className="text-xl font-bold leading-tight dark:text-white">
-                      Công nghệ Giáo dục
-                    </h3>
+                    <h3 className="text-xl font-bold leading-tight dark:text-white">Công nghệ Giáo dục</h3>
                     <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
                       Nền tảng E-learning, gamification và các công cụ kỹ thuật số cho sư phạm hiện đại.
                     </p>
@@ -381,7 +411,7 @@ const HomePage = () => {
             </div>
           </section>
 
-                      {/* ===== ONGOING CONFERENCES LIST (NEW) ===== */}
+          {/* ===== ONGOING CONFERENCES LIST ===== */}
           <section className="w-full px-4 py-12 md:px-10 lg:px-20 bg-background-light dark:bg-[#150a0a]">
             <div className="flex flex-col gap-8 @container">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -394,10 +424,7 @@ const HomePage = () => {
                   </p>
                 </div>
 
-                <Link
-                  to="/login"
-                  className="flex items-center gap-2 text-primary font-bold hover:underline whitespace-nowrap"
-                >
+                <Link to="/login" className="flex items-center gap-2 text-primary font-bold hover:underline whitespace-nowrap">
                   Xem chi tiết
                   <span className="material-symbols-outlined text-sm">arrow_forward</span>
                 </Link>
@@ -416,7 +443,6 @@ const HomePage = () => {
                   {ongoingConferences.map((conf) => {
                     const tracks = tracksByConf[conf.id] || [];
                     const tags = topicTagsByConf[conf.id] || [];
-
                     const logoUrl = buildLogoUrl(conf.logo) || "/placeholder-conference.jpg";
 
                     return (
@@ -425,13 +451,11 @@ const HomePage = () => {
                         className="rounded-2xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] p-5 hover:shadow-lg transition"
                       >
                         <div className="flex gap-4">
-                          {/* left image */}
                           <div
                             className="w-28 h-20 rounded-xl bg-cover bg-center flex-none border border-[#e5dcdc] dark:border-[#3a2a2a]"
                             style={{ backgroundImage: `url("${logoUrl}")` }}
                           />
 
-                          {/* content */}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -459,7 +483,6 @@ const HomePage = () => {
                               </Link>
                             </div>
 
-                            {/* tracks */}
                             <div className="mt-3">
                               <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                                 Tracks
@@ -479,13 +502,10 @@ const HomePage = () => {
                                   ) : null}
                                 </div>
                               ) : (
-                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">
-                                  (Chưa có track)
-                                </div>
+                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">(Chưa có track)</div>
                               )}
                             </div>
 
-                            {/* topic tags */}
                             <div className="mt-4">
                               <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                                 Topics
@@ -506,9 +526,7 @@ const HomePage = () => {
                                   ) : null}
                                 </div>
                               ) : (
-                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">
-                                  (Chưa có topic)
-                                </div>
+                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">(Chưa có topic)</div>
                               )}
                             </div>
                           </div>
@@ -521,9 +539,119 @@ const HomePage = () => {
             </div>
           </section>
 
+          {/* ===== PROCEEDINGS LIST ===== */}
+          <section
+            id="proceedings"
+            className="w-full px-4 py-14 md:px-10 lg:px-20 bg-white dark:bg-[#1a0f0f] border-y border-[#f4f0f0] dark:border-[#2a1a2a]"
+          >
+            <div className="flex flex-col gap-8 @container">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                <div className="flex flex-col gap-3 max-w-[720px]">
+                  <h2 className="text-3xl font-bold leading-tight tracking-tight md:text-4xl dark:text-white">
+                    Kỷ yếu đã công bố
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-lg">
+                    Danh sách các kỷ yếu đã được công bố. Nhấn vào một kỷ yếu để xem chi tiết và tải PDF từng bài.
+                  </p>
+                </div>
 
+                <div className="w-full md:w-[360px]">
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg text-gray-400">
+                      search
+                    </span>
+                    <input
+                      id="proceedings-search"
+                      value={proQ}
+                      onChange={(e) => setProQ(e.target.value)}
+                      placeholder="Tìm theo tên hội nghị / tên kỷ yếu..."
+                      className="w-full h-12 rounded-xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                </div>
+              </div>
 
-          {/* ===== DEADLINES (CHỈ 1 LẦN - timeline chuẩn) ===== */}
+              {proErr && (
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-semibold dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                  {proErr}
+                </div>
+              )}
+
+              {proLoading ? (
+                <div className="text-gray-600 dark:text-gray-300 font-semibold">Đang tải danh sách kỷ yếu...</div>
+              ) : filteredProceedings.length === 0 ? (
+                <div className="text-gray-600 dark:text-gray-300">Chưa có kỷ yếu nào được công bố.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {filteredProceedings.map((x) => {
+                    const conferenceId = x?.conference_id;
+                    const cover = toPublicFileUrl(x?.cover_image_url);
+                    const title = x?.proceedings_title || x?.title || "Proceedings";
+
+                    return (
+                      <Link
+                        key={conferenceId}
+                        to={`/proceedings/${conferenceId}`}
+                        className="block w-full group text-left rounded-2xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] overflow-hidden transition-all hover:shadow-lg hover:border-primary/30"
+                      >
+                        <div className="relative aspect-[16/10] bg-gray-100 dark:bg-black/20 overflow-hidden">
+                          {cover ? (
+                            <img
+                              src={cover}
+                              alt="cover"
+                              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              Không có ảnh bìa
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/0 to-transparent" />
+
+                          <div className="absolute left-4 bottom-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/90 text-[#181111] text-xs font-bold">
+                            <span className="material-symbols-outlined text-sm text-primary">menu_book</span>
+                            Published
+                          </div>
+                        </div>
+
+                        <div className="p-5 flex flex-col gap-2">
+                          <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            {x?.conference_name || `Conference #${conferenceId}`}
+                          </p>
+
+                          <h3 className="text-lg font-black leading-snug text-[#181111] dark:text-white line-clamp-2">
+                            {title}
+                          </h3>
+
+                          <div className="mt-1 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 flex-wrap">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[18px] text-primary">event</span>
+                              <span>{x?.published_date ? fmtDate(x.published_date) : "—"}</span>
+                            </span>
+
+                            {(x?.isbn_issn || "").trim() && (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[18px] text-primary">barcode</span>
+                                <span className="truncate max-w-[220px]">{x.isbn_issn}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-3 inline-flex items-center gap-2 text-primary font-bold">
+                            Xem chi tiết
+                            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ===== DEADLINES (tích hợp đầy đủ từ code cũ) ===== */}
           <section className="w-full px-4 py-16 md:px-10 lg:px-20" id="deadlines">
             <div className="flex flex-col gap-12 max-w-[1000px] mx-auto">
               <div className="text-center">
@@ -535,6 +663,7 @@ const HomePage = () => {
                 </p>
               </div>
 
+              {/* Desktop timeline */}
               <div className="relative hidden md:block">
                 <div className="absolute top-1/2 left-0 w-full h-1 bg-[#e5dcdc] dark:bg-[#3a2a2a] -translate-y-1/2 rounded-full"></div>
 
@@ -555,9 +684,7 @@ const HomePage = () => {
                     </div>
                     <div className="absolute top-14 flex flex-col items-center text-center w-40">
                       <span className="text-base font-bold text-primary">10/09</span>
-                      <span className="text-base font-bold text-[#181111] dark:text-white">
-                        Hạn nộp toàn văn
-                      </span>
+                      <span className="text-base font-bold text-[#181111] dark:text-white">Hạn nộp toàn văn</span>
                     </div>
                   </div>
 
@@ -567,9 +694,7 @@ const HomePage = () => {
                     </div>
                     <div className="absolute top-14 flex flex-col items-center text-center w-40">
                       <span className="text-sm font-bold text-[#181111] dark:text-white">25/09</span>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Thông báo kết quả
-                      </span>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Thông báo kết quả</span>
                     </div>
                   </div>
 
@@ -579,9 +704,7 @@ const HomePage = () => {
                     </div>
                     <div className="absolute top-14 flex flex-col items-center text-center w-40">
                       <span className="text-sm font-bold text-[#181111] dark:text-white">05/10</span>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Nộp bản in
-                      </span>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Nộp bản in</span>
                     </div>
                   </div>
 
@@ -591,9 +714,7 @@ const HomePage = () => {
                     </div>
                     <div className="absolute top-14 flex flex-col items-center text-center w-40">
                       <span className="text-sm font-bold text-[#181111] dark:text-white">12/10</span>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Ngày hội nghị
-                      </span>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Ngày hội nghị</span>
                     </div>
                   </div>
                 </div>
@@ -601,100 +722,110 @@ const HomePage = () => {
 
               <div className="hidden md:block h-24"></div>
 
+              {/* Mobile timeline */}
               <div className="flex flex-col md:hidden gap-6 relative pl-4 border-l-2 border-[#e5dcdc] dark:border-[#3a2a2a] ml-4">
                 <div className="flex flex-col gap-1 relative">
                   <div className="absolute -left-[21px] top-1 size-3 rounded-full bg-primary ring-4 ring-white dark:ring-[#211111]"></div>
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider line-through">
-                    15/08
-                  </span>
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider line-through">15/08</span>
                   <h3 className="text-base font-medium text-gray-400">Nộp tóm tắt</h3>
                 </div>
 
                 <div className="flex flex-col gap-1 relative">
                   <div className="absolute -left-[23px] top-1 size-4 rounded-full bg-primary ring-4 ring-white dark:ring-[#211111] shadow-[0_0_0_4px_rgba(234,42,51,0.2)]"></div>
                   <span className="text-xs font-bold text-primary uppercase tracking-wider">10/09</span>
-                  <h3 className="text-lg font-bold text-[#181111] dark:text-white">
-                    Hạn nộp toàn văn
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Nộp bản thảo cuối cùng để phản biện.
-                  </p>
+                  <h3 className="text-lg font-bold text-[#181111] dark:text-white">Hạn nộp toàn văn</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Nộp bản thảo cuối cùng để phản biện.</p>
                 </div>
 
                 <div className="flex flex-col gap-1 relative">
                   <div className="absolute -left-[21px] top-1 size-3 rounded-full bg-[#e5dcdc] dark:bg-[#3a2a2a] ring-4 ring-white dark:ring-[#211111]"></div>
-                  <span className="text-xs font-bold text-[#181111] dark:text-white uppercase tracking-wider">
-                    25/09
-                  </span>
-                  <h3 className="text-base font-medium text-gray-600 dark:text-gray-400">
-                    Thông báo kết quả
-                  </h3>
+                  <span className="text-xs font-bold text-[#181111] dark:text-white uppercase tracking-wider">25/09</span>
+                  <h3 className="text-base font-medium text-gray-600 dark:text-gray-400">Thông báo kết quả</h3>
                 </div>
 
                 <div className="flex flex-col gap-1 relative">
                   <div className="absolute -left-[21px] top-1 size-3 rounded-full bg-[#e5dcdc] dark:bg-[#3a2a2a] ring-4 ring-white dark:ring-[#211111]"></div>
-                  <span className="text-xs font-bold text-[#181111] dark:text-white uppercase tracking-wider">
-                    05/10
-                  </span>
-                  <h3 className="text-base font-medium text-gray-600 dark:text-gray-400">
-                    Nộp bản in (Camera Ready)
-                  </h3>
+                  <span className="text-xs font-bold text-[#181111] dark:text-white uppercase tracking-wider">05/10</span>
+                  <h3 className="text-base font-medium text-gray-600 dark:text-gray-400">Nộp bản in (Camera Ready)</h3>
                 </div>
 
                 <div className="flex flex-col gap-1 relative">
                   <div className="absolute -left-[21px] top-1 size-3 rounded-full bg-[#e5dcdc] dark:bg-[#3a2a2a] ring-4 ring-white dark:ring-[#211111]"></div>
-                  <span className="text-xs font-bold text-[#181111] dark:text-white uppercase tracking-wider">
-                    12/10
-                  </span>
-                  <h3 className="text-base font-medium text-gray-600 dark:text-gray-400">
-                    Ngày hội nghị
-                  </h3>
+                  <span className="text-xs font-bold text-[#181111] dark:text-white uppercase tracking-wider">12/10</span>
+                  <h3 className="text-base font-medium text-gray-600 dark:text-gray-400">Ngày hội nghị</h3>
                 </div>
               </div>
             </div>
           </section>
         </main>
 
-        {/* ================= FOOTER ================= */}
+        {/* ================= FOOTER (tích hợp đầy đủ từ code cũ) ================= */}
         <footer className="bg-white dark:bg-[#150a0a] border-t border-[#e5dcdc] dark:border-[#3a2a2a] pt-12 pb-8">
           <div className="max-w-[1440px] mx-auto px-4 md:px-10">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
               <div className="col-span-1 md:col-span-1 flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-[#181111] dark:text-white">
                   <div className="size-6 text-primary">
-                    <svg
-                      fill="currentColor"
-                      viewBox="0 0 48 48"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
+                    <svg fill="currentColor" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                       <path d="M24 45.8096C19.6865 45.8096 15.4698 44.5305 11.8832 42.134C8.29667 39.7376 5.50128 36.3314 3.85056 32.3462C2.19985 28.361 1.76794 23.9758 2.60947 19.7452C3.451 15.5145 5.52816 11.6284 8.57829 8.5783C11.6284 5.52817 15.5145 3.45101 19.7452 2.60948C23.9758 1.76795 28.361 2.19986 32.3462 3.85057C36.3314 5.50129 39.7376 8.29668 42.134 11.8833C44.5305 15.4698 45.8096 19.6865 45.8096 24L24 24L24 45.8096Z"></path>
                     </svg>
                   </div>
                   <h2 className="text-lg font-bold">UTH-ConfMS</h2>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Hệ thống quản lý hội nghị chính thức của Đại học Công nghệ &amp; Sức
-                  khỏe UTH.
+                  Hệ thống quản lý hội nghị chính thức của Đại học Công nghệ &amp; Sức khỏe UTH.
                 </p>
               </div>
 
               <div>
                 <h3 className="font-bold mb-4 dark:text-white">Liên kết nhanh</h3>
                 <ul className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <li><a className="hover:text-primary" href="#">Trang chủ</a></li>
-                  <li><a className="hover:text-primary" href="#">Kêu gọi viết bài</a></li>
-                  <li><Link className="hover:text-primary" to="/register">Đăng ký</Link></li>
-                  <li><a className="hover:text-primary" href="#">Ban tổ chức</a></li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Trang chủ
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Kêu gọi viết bài
+                    </a>
+                  </li>
+                  <li>
+                    <Link className="hover:text-primary" to="/register">
+                      Đăng ký
+                    </Link>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Ban tổ chức
+                    </a>
+                  </li>
                 </ul>
               </div>
 
               <div>
                 <h3 className="font-bold mb-4 dark:text-white">Tài nguyên</h3>
                 <ul className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <li><a className="hover:text-primary" href="#">Hướng dẫn tác giả</a></li>
-                  <li><a className="hover:text-primary" href="#">Hướng dẫn phản biện</a></li>
-                  <li><a className="hover:text-primary" href="#">Hội nghị trước</a></li>
-                  <li><a className="hover:text-primary" href="#">Hỗ trợ</a></li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hướng dẫn tác giả
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hướng dẫn phản biện
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hội nghị trước
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hỗ trợ
+                    </a>
+                  </li>
                 </ul>
               </div>
 

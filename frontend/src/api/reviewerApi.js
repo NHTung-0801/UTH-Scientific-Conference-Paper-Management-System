@@ -17,7 +17,7 @@ const TOPIC_PREFIX = "/conference/api/topics";
 
 const SUBMISSION_PREFIX = "/submission/submissions";
 const REVIEW_ASSIGNMENT_PREFIX = "/review/assignments";
-const REVIEW_PAPER_PREFIX = "/review/papers"; // ✅ Đã thêm prefix cho papers
+const REVIEW_PAPER_PREFIX = "/review/papers";
 
 const unwrap = (res) => (res?.data !== undefined ? res.data : res);
 
@@ -65,7 +65,6 @@ const reviewerApi = {
     return unwrap(res);
   },
 
-  // tiện dùng cho trang phân công (nếu muốn gọi trực tiếp từ reviewerApi)
   getTracksByConference: async (conferenceId) => {
     const res = await axiosClient.get(`${TRACK_PREFIX}/conference/${conferenceId}`);
     const data = unwrap(res);

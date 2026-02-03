@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import PrivateRoute from "./PrivateRoute";
 import { ROLES } from "../utils/constants";
 import AccountSettings from "../pages/common/AccountSettings";
+import CameraReadyPage from "../pages/author/CameraReadyPage";
+import CameraReadySubmitPage from "../pages/author/CameraReadySubmitPage";
 
 
 // Layouts
@@ -12,6 +14,7 @@ import DashboardLayout from "../layouts/DashboardLayout";
 // Public Pages
 import HomePage from "../pages/public/HomePage";
 import ConferenceDetail from "../pages/public/ConferenceDetail";
+import PublicProceedingsLandingPage from "../pages/public/PublicProceedingsLandingPage";
 
 // Auth Pages
 import Login from "../pages/auth/Login";
@@ -31,6 +34,7 @@ import EditSubmissionAuthor from "../pages/author/EditSubmissionAuthor";
 import Notifications from "../pages/author/Notifications";
 import DiscoverConferences from "../pages/author/DiscoverConferences";
 import AuthorConferenceDetail from "../pages/author/AuthorConferenceDetail";
+
 
 import ChairDashboard from "../pages/chair/ChairDashboard";
 
@@ -60,6 +64,15 @@ import ConferenceDetailPage from "../pages/chair/conference/ConferenceDetailPage
 import ConferenceEditPage from "../pages/chair/conference/ConferenceEditPage";
 import TrackEditPage from "../pages/chair/tracks/TrackEditPage";
 import ReviewerManagementPage from "../pages/chair/ReviewerManagementPage";
+import CameraReadyListPage from "../pages/chair/CameraReadyListPage";
+import CameraReadyDetailPage from "../pages/chair/CameraReadyDetailPage";
+import ProceedingsIndexPage from "../pages/chair/ProceedingsIndexPage";
+import ProceedingsPublishPage from "../pages/chair/ProceedingsPublishPage";
+import ProceedingsPublishSuccessPage from "../pages/chair/ProceedingsPublishSuccessPage";
+import ChairReviewOverviewPage from "../pages/chair/ChairReviewOverviewPage";
+import ChairReviewDetailPage from "../pages/chair/ChairReviewDetailPage";
+
+
 import CreateTopicPage from "../pages/chair/topics/CreateTopicPage";
 import ReviewerAssignmentPage from "../pages/chair/ReviewerAssignmentPage";
 const AppRoutes = () => {
@@ -69,6 +82,7 @@ const AppRoutes = () => {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/conference/:id" element={<ConferenceDetail />} />
+        <Route path="/proceedings/:conferenceId" element={<PublicProceedingsLandingPage />} />
       </Route>
 
       {/* 2) AUTH ROUTES (Login/Register/Forgot Pass)
@@ -96,6 +110,8 @@ const AppRoutes = () => {
           <Route path="/author/submissions" element={<MySubmissions />} />
           <Route path="/author/submissions/new" element={<SubmitPaper />} />
           <Route path="/author/notifications" element={<Notifications />} />
+          <Route path="/author/camera-ready" element={<CameraReadyPage />} />
+          <Route path="/author/camera-ready/:paperId" element={<CameraReadySubmitPage />} />
           <Route path="/author/conferences" element={<DiscoverConferences />} />
           <Route path="/author/conferences/:id" element={<AuthorConferenceDetail />} />
           <Route path="/author/submissions/:id" element={<PaperDetail />} />
@@ -120,6 +136,15 @@ const AppRoutes = () => {
           <Route path="/chair/reviewers/assign" element={<ReviewerAssignmentPage />} />
           <Route path="/chair/profile" element={<ProfilePage />} /> 
           <Route path="/chair/settings" element={<AccountSettings />} />
+          <Route path="/chair/camera-ready" element={<CameraReadyListPage />} />
+          <Route path="/chair/camera-ready/:paperId" element={<CameraReadyDetailPage />} />
+          <Route path="/chair/proceedings" element={<ProceedingsIndexPage />} />
+          <Route path="/chair/proceedings/:conferenceId" element={<ProceedingsPublishPage />} />
+          <Route path="/chair/proceedings/:conferenceId/success" element={<ProceedingsPublishSuccessPage />} />
+          <Route path="/chair/reviews" element={<ChairReviewOverviewPage />} />
+          <Route path="/chair/reviews/paper/:paperId" element={<ChairReviewDetailPage />} />
+
+          
 
         </Route>
 
