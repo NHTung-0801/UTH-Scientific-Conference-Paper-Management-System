@@ -1,10 +1,12 @@
+// src/pages/reviewer/MyAssignments.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import reviewApi from "../../api/reviewApi";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "react-toastify";
+import notificationApi from "../../api/notificationApi";
 
-// Helper hiển thị Badge trạng thái
+// Helper hiển thị Badge trạng thái (ASSIGNMENT)
 const statusBadge = (status) => {
   const s = (status || "").toLowerCase();
 
@@ -47,31 +49,154 @@ const statusBadge = (status) => {
   );
 };
 
+// Badge trạng thái cho INVITE (bảng dưới - role invite)
+const inviteStatusBadge = (stRaw) => {
+  const st = (stRaw || "PENDING").toUpperCase();
+  const cls =
+    st === "ACCEPTED"
+      ? "bg-green-100 text-green-700 border border-green-200"
+      : st === "DECLINED"
+      ? "bg-red-100 text-red-700 border border-red-200"
+      : "bg-amber-100 text-amber-700 border border-amber-200";
+
+  const label = st === "PENDING" ? "Mời mới" : st === "ACCEPTED" ? "Đã chấp nhận" : "Đã từ chối";
+
+  return (
+    <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold ${cls}`}>
+      {label}
+    </span>
+  );
+};
+
+/** ✅ xác định invite loại “hội nghị” (gửi từ ReviewerAssignmentPage)
+ *  Heuristic: có conference_id / conference_name / track_id / topic_id / track_name / topic_name
+ */
+const isConferenceInvite = (inv) => {
+  if (!inv) return false;
+  return Boolean(
+    inv.conference_id ||
+      inv.conferenceId ||
+      inv.conference_name ||
+      inv.conferenceName ||
+      inv.track_id ||
+      inv.trackId ||
+      inv.topic_id ||
+      inv.topicId ||
+      inv.track_name ||
+      inv.trackName ||
+      inv.topic_name ||
+      inv.topicName
+  );
+};
+
+/** ✅ map conference invite -> row giống assignment để đẩy lên bảng trên */
+const mapConferenceInviteToAssignmentRow = (inv) => {
+  const st = (inv.status || "PENDING").toUpperCase();
+
+  const uiStatus =
+    st === "PENDING" ? "Invited" : st === "ACCEPTED" ? "Accepted" : "Declined";
+
+  const confName = inv.conference_name || inv.conferenceName || inv.conference?.name || "Hội nghị";
+  const trackName = inv.track_name || inv.trackName || "";
+  const topicName = inv.topic_name || inv.topicName || "";
+
+  const titleParts = [`[Mời hội nghị] ${confName}`];
+  if (trackName) titleParts.push(`Track: ${trackName}`);
+  if (topicName) titleParts.push(`Topic: ${topicName}`);
+
+  return {
+    // giả lập structure assignment
+    id: `conf-inv-${inv.id}`,          // để không đụng assignment id
+    _kind: "conference_invite",        // để render action đúng
+    _invite_id: inv.id,               // id thật để accept/decline
+
+    // các field đang dùng trong UI bảng trên
+    paper_title: titleParts.join(" • "),
+    paper_id: `INV-${inv.id}`,         // để hiển thị Paper ID cho giống layout (không null)
+    due_date: inv.due_date || inv.expires_at || inv.expired_at || null,
+
+    _ui_status: uiStatus,
+    _blockedByCoi: false,
+
+    // giữ raw nếu sau này cần show thêm
+    _raw_inv: inv,
+  };
+};
+
 export default function MyAssignments() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // ✅ bảng dưới: chỉ giữ role invites
+  const [invites, setInvites] = useState([]);
+  const [loadingInvites, setLoadingInvites] = useState(true);
+
+  // ✅ bảng trên: assignments + conference invites
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [items, setItems] = useState([]);
 
   // COI States
-  const [openCoiPaperIds, setOpenCoiPaperIds] = useState(new Set());
+  // [FIX] Removed unused openCoiPaperIds state
   const [resolvingByPaperId, setResolvingByPaperId] = useState({});
 
-  // Filter Tabs
+  // Tabs cho ASSIGNMENTS
   const [tab, setTab] = useState("all");
 
-  // --- HÀM KIỂM TRA QUÁ HẠN ---
+  // Tabs cho INVITES (bảng dưới)
+  const [inviteTab, setInviteTab] = useState("all"); // all | pending | accepted | declined
+
+  
   const isOverdue = (dateStr) => {
     if (!dateStr) return false;
     return new Date() > new Date(dateStr);
   };
 
+  const handleAcceptInvite = async (invId) => {
+    try {
+      await notificationApi.acceptReviewerInvitation(invId);
+      toast.success("✅ Đã chấp nhận lời mời reviewer!");
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || e?.message || "Accept thất bại");
+    }
+  };
+
+  const handleDeclineInvite = async (invId) => {
+    if (!window.confirm("Bạn chắc chắn muốn từ chối lời mời này?")) return;
+    try {
+      await notificationApi.declineReviewerInvitation(invId);
+      toast.info("Đã từ chối lời mời.");
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || e?.message || "Decline thất bại");
+    }
+  };
+
   const load = async () => {
     if (!user) return;
+
     setLoading(true);
     setErr("");
+
+    // ✅ load invites (tách 2 loại)
+    setLoadingInvites(true);
+    let roleInvites = [];
+    let conferenceInvites = [];
+    try {
+      const invRes = await notificationApi.getMyReviewerInvitations();
+      const invList = Array.isArray(invRes) ? invRes : (invRes?.data || []);
+
+      conferenceInvites = invList.filter(isConferenceInvite);
+      roleInvites = invList.filter((x) => !isConferenceInvite(x));
+
+      setInvites(roleInvites); // bảng dưới chỉ show role invite
+    } catch (e) {
+      setInvites([]);
+      conferenceInvites = [];
+    } finally {
+      setLoadingInvites(false);
+    }
 
     try {
       // 1. List Assignments
@@ -86,47 +211,54 @@ export default function MyAssignments() {
           .filter((c) => (c.status?.value ?? c.status ?? "").toLowerCase() === "open")
           .map((c) => c.paper_id)
       );
-      setOpenCoiPaperIds(openSet);
+      // [FIX] Removed setOpenCoiPaperIds(openSet)
 
-      // 3. Enrich Data (Check Submitted)
-      const enrichedAssignments = await Promise.all(assignments.map(async (a) => {
-        let aStatus = (a.status?.value ?? a.status ?? "").toString();
-        
-        // Nếu Accepted -> Check review submitted
-        if (aStatus.toLowerCase() === 'accepted') {
+      // 3. Enrich Assignments (Check Submitted)
+      const enrichedAssignments = await Promise.all(
+        assignments.map(async (a) => {
+          let aStatus = (a.status?.value ?? a.status ?? "").toString();
+
+          
+          if (aStatus.toLowerCase() === "accepted") {
             try {
-                const reviewsRes = await reviewApi.listReviews({ assignmentId: a.id });
-                const reviews = Array.isArray(reviewsRes) ? reviewsRes : (reviewsRes?.data || []);
-                const myReview = reviews[0];
-                if (myReview && (myReview.is_draft === false || myReview.submitted_at)) {
-                    aStatus = "Completed"; 
-                }
-            } catch (ignore) { }
-        }
+              const reviewsRes = await reviewApi.listReviews({ assignmentId: a.id });
+              const reviews = Array.isArray(reviewsRes) ? reviewsRes : (reviewsRes?.data || []);
+              const myReview = reviews[0];
+              if (myReview && (myReview.is_draft === false || myReview.submitted_at)) {
+                aStatus = "Completed";
+              }
+            } catch (ignore) {}
+          }
 
-        const isCompleted = aStatus.toLowerCase() === "completed";
-        const blockedByCoi = openSet.has(a.paper_id) && !isCompleted;
+          const isCompleted = aStatus.toLowerCase() === "completed";
+          const blockedByCoi = openSet.has(a.paper_id) && !isCompleted;
 
-        return {
-          ...a,
-          _ui_status: blockedByCoi ? "COI" : aStatus,
-          _blockedByCoi: blockedByCoi,
+          return {
+            ...a,
+            _kind: "assignment",
+            _ui_status: blockedByCoi ? "COI" : aStatus,
+            _blockedByCoi: blockedByCoi,
+          };
+        })
+      );
+
+      // ✅ 4. Map conference invites -> rows và merge vào bảng trên
+      const confInviteRows = (conferenceInvites || []).map(mapConferenceInviteToAssignmentRow);
+
+      const mergedTop = [...confInviteRows, ...enrichedAssignments];
+
+      // Sort: Invited lên đầu, sau đó Accepted
+      mergedTop.sort((a, b) => {
+        const score = (s) => {
+          s = (s || "").toLowerCase();
+          if (s === "invited") return 0;
+          if (s === "accepted") return 1;
+          return 2;
         };
-      }));
-
-      // Sort: Invited lên đầu, sau đó đến Accepted
-      enrichedAssignments.sort((a, b) => {
-         const score = (s) => {
-            s = (s || "").toLowerCase();
-            if(s === "invited") return 0;
-            if(s === "accepted") return 1;
-            return 2;
-         };
-         return score(a._ui_status) - score(b._ui_status);
+        return score(a._ui_status) - score(b._ui_status);
       });
 
-      setItems(enrichedAssignments);
-
+      setItems(mergedTop);
     } catch (e) {
       setErr(e?.response?.data?.detail || e?.message || "Không tải được assignments");
     } finally {
@@ -139,31 +271,30 @@ export default function MyAssignments() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // --- Handlers ---
-
+  // --- Handlers (assignment) ---
   const handleAccept = async (assignmentId) => {
     try {
-        await reviewApi.acceptAssignment(assignmentId);
-        toast.success("Đã nhận bài chấm!");
-        await load();
-    } catch(e) {
-        toast.error("Lỗi: " + e.message);
+      await reviewApi.acceptAssignment(assignmentId);
+      toast.success("Đã nhận bài chấm!");
+      await load();
+    } catch (e) {
+      toast.error("Lỗi: " + e.message);
     }
   };
 
   const handleDecline = async (assignmentId) => {
-    if(!window.confirm("Bạn chắc chắn muốn từ chối chấm bài này?")) return;
+    if (!window.confirm("Bạn chắc chắn muốn từ chối chấm bài này?")) return;
     try {
-        await reviewApi.declineAssignment(assignmentId);
-        toast.info("Đã từ chối.");
-        await load();
-    } catch(e) {
-        toast.error("Lỗi: " + e.message);
+      await reviewApi.declineAssignment(assignmentId);
+      toast.info("Đã từ chối.");
+      await load();
+    } catch (e) {
+      toast.error("Lỗi: " + e.message);
     }
   };
 
-  const handleDeclareCOI = async (paperId) => {
-    navigate("/reviewer/coi"); 
+  const handleDeclareCOI = async () => {
+    navigate("/reviewer/coi");
   };
 
   const handleResolveCoiAndAccept = async (paperId, assignmentId) => {
@@ -172,8 +303,8 @@ export default function MyAssignments() {
       setResolvingByPaperId((p) => ({ ...p, [paperId]: true }));
       let list = [];
       try {
-         const res = await reviewApi.listMyCOI();
-         list = (res.data || []).filter((x) => x.paper_id === paperId);
+        const res = await reviewApi.listMyCOI();
+        list = (res.data || []).filter((x) => x.paper_id === paperId);
       } catch (e) {}
       const open = list.find((x) => (x.status || "").toString().toLowerCase() === "open");
       if (!open) throw new Error("Không tìm thấy COI Open.");
@@ -187,32 +318,53 @@ export default function MyAssignments() {
     }
   };
 
+  // ====== computed ASSIGNMENTS (bảng trên) ======
   const computed = useMemo(() => {
     const all = items || [];
-    
+
     const invited = all.filter((x) => (x._ui_status || "").toLowerCase() === "invited");
     const todo = all.filter((x) => (x._ui_status || "").toLowerCase() === "accepted");
     const done = all.filter((x) => (x._ui_status || "").toLowerCase() === "completed");
     const blocked = all.filter((x) => ["coi", "declined"].includes((x._ui_status || "").toLowerCase()));
 
     const current =
-      tab === "invited" ? invited :
-      tab === "todo" ? todo : 
-      tab === "done" ? done : 
-      tab === "blocked" ? blocked : all;
+      tab === "invited"
+        ? invited
+        : tab === "todo"
+        ? todo
+        : tab === "done"
+        ? done
+        : tab === "blocked"
+        ? blocked
+        : all;
 
     return { all, invited, todo, done, blocked, current };
   }, [items, tab]);
 
+  // ====== computed INVITES (bảng dưới - role invite) ======
+  const inviteComputed = useMemo(() => {
+    const allInv = invites || [];
+    const pending = allInv.filter((x) => (x.status || "").toUpperCase() === "PENDING");
+    const accepted = allInv.filter((x) => (x.status || "").toUpperCase() === "ACCEPTED");
+    const declined = allInv.filter((x) => (x.status || "").toUpperCase() === "DECLINED");
+
+    const current =
+      inviteTab === "pending"
+        ? pending
+        : inviteTab === "accepted"
+        ? accepted
+        : inviteTab === "declined"
+        ? declined
+        : allInv;
+
+    return { allInv, pending, accepted, declined, current };
+  }, [invites, inviteTab]);
+
   return (
     <div>
       <div className="mb-8">
-        <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-          Danh sách bài báo
-        </h2>
-        <p className="text-slate-500 mt-2">
-          Tất cả các lời mời và bài báo đã được phân công cho bạn.
-        </p>
+        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Danh sách bài báo</h2>
+        <p className="text-slate-500 mt-2">Tất cả bài báo đã được phân công cho bạn.</p>
       </div>
 
       {err && (
@@ -221,50 +373,70 @@ export default function MyAssignments() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* ================== TABLE 1: ASSIGNMENTS (GIỮ NGUYÊN + THÊM LỜI MỜI HỘI NGHỊ) ================== */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between p-4 gap-4 border-b border-slate-100">
-          <div className="flex gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto">
-            {[
-                {k: "all", l: "Tất cả", c: computed.all.length},
-                {k: "invited", l: "Mời mới", c: computed.invited.length},
-                {k: "todo", l: "Đang chấm", c: computed.todo.length},
-                {k: "done", l: "Hoàn thành", c: computed.done.length},
-                {k: "blocked", l: "Đã xong/Chặn", c: computed.blocked.length}
-            ].map(t => (
-                <button
-                  key={t.k}
-                  onClick={() => setTab(t.k)}
-                  className={`px-4 py-1.5 text-sm rounded-md transition-all whitespace-nowrap ${
-                    tab === t.k
-                      ? "font-bold bg-white shadow-sm text-primary"
-                      : "font-medium text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  {t.l} <span className="opacity-60 text-xs ml-1">({t.c})</span>
-                </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50">
                 <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100">ID</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 min-w-[280px]">Bài báo</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-center">Trạng thái</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-center">Hạn chót</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-right">Thao tác</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 min-w-[280px]">
+                  Bài báo
+                </th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-center">
+                  Trạng thái
+                </th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-center">
+                  Hạn chót
+                </th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-right">
+                  Thao tác
+                </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
+              {/* Tabs nằm trong table */}
+              <tr>
+                <td colSpan={5} className="px-6 py-3 bg-white border-b border-slate-100">
+                  <div className="flex gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto w-fit">
+                    {[
+                      { k: "all", l: "Tất cả", c: computed.all.length },
+                      { k: "invited", l: "Mời mới", c: computed.invited.length },
+                      { k: "todo", l: "Đang chấm", c: computed.todo.length },
+                      { k: "done", l: "Hoàn thành", c: computed.done.length },
+                      { k: "blocked", l: "Đã xong/Chặn", c: computed.blocked.length },
+                    ].map((t) => (
+                      <button
+                        key={t.k}
+                        onClick={() => setTab(t.k)}
+                        className={`px-4 py-1.5 text-sm rounded-md transition-all whitespace-nowrap ${
+                          tab === t.k
+                            ? "font-bold bg-white shadow-sm text-primary"
+                            : "font-medium text-slate-500 hover:text-slate-700"
+                        }`}
+                        type="button"
+                      >
+                        {t.l} <span className="opacity-60 text-xs ml-1">({t.c})</span>
+                      </button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+
               {loading ? (
-                <tr><td className="px-6 py-10 text-center text-slate-500" colSpan={5}>Đang tải...</td></tr>
+                
+                <tr>
+                  <td className="px-6 py-10 text-center text-slate-500" colSpan={5}>
+                    Đang tải...
+                  </td>
+                </tr>
               ) : computed.current.length === 0 ? (
-                <tr><td className="px-6 py-10 text-center text-slate-500" colSpan={5}>Trống.</td></tr>
+                <tr>
+                  <td className="px-6 py-10 text-center text-slate-500" colSpan={5}>
+                    Trống.
+                  </td>
+                </tr>
               ) : (
                 computed.current.map((a) => {
                   const s = (a._ui_status || "").toLowerCase();
@@ -272,19 +444,29 @@ export default function MyAssignments() {
                   const isDone = s === "completed";
                   const isAccepted = s === "accepted";
                   const isInvited = s === "invited";
-                  
-                  // Tính toán quá hạn
+
                   const expired = isOverdue(a.due_date);
+
+                  // ✅ phân biệt conference invite row
+                  const isConferenceRow = a._kind === "conference_invite";
 
                   return (
                     <tr key={a.id} className={`hover:bg-slate-50 transition-colors ${isBlocked ? "bg-red-50/20" : ""}`}>
-                      <td className="px-6 py-4 text-sm font-mono font-bold text-slate-400">#{a.id}</td>
+                      <td className="px-6 py-4 text-sm font-mono font-bold text-slate-400">
+                        {isConferenceRow ? `#INV-${a._invite_id}` : `#${a.id}`}
+                      </td>
+
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
                           <span className="text-sm font-bold text-slate-900 line-clamp-1">
-                             {a.paper_title || a.title || `Paper #${a.paper_id}`}
+                            {a.paper_title || a.title || `Paper #${a.paper_id}`}
                           </span>
-                          <span className="text-xs text-slate-400 mt-1">Paper ID: {a.paper_id}</span>
+
+                          {/* giữ layout Paper ID như cũ */}
+                          <span className="text-xs text-slate-400 mt-1">
+                            Paper ID: {a.paper_id}
+                          </span>
+
                           {a._blockedByCoi && (
                             <span className="mt-1 text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded w-fit">
                               Bị chặn bởi COI
@@ -292,82 +474,119 @@ export default function MyAssignments() {
                           )}
                         </div>
                       </td>
+
                       <td className="px-6 py-4 text-center">{statusBadge(a._ui_status)}</td>
+
                       <td className="px-6 py-4 text-center">
-                        <span className={`text-sm font-medium ${isBlocked ? "text-slate-400 line-through" : expired ? "text-rose-600 font-bold" : "text-slate-600"}`}>
+                        <span
+                          className={`text-sm font-medium ${
+                            isBlocked ? "text-slate-400 line-through" : expired ? "text-rose-600 font-bold" : "text-slate-600"
+                          }`}
+                        >
                           {a.due_date ? new Date(a.due_date).toLocaleDateString("vi-VN") : "—"}
-                          {expired && !isDone && !isBlocked && <span className="block text-[10px] text-rose-500">(Quá hạn)</span>}
+                          {expired && !isDone && !isBlocked && (
+                            <span className="block text-[10px] text-rose-500">(Quá hạn)</span>
+                          )}
                         </span>
                       </td>
+
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                            
-                            {/* --- TRƯỜNG HỢP 1: MỜI MỚI (INVITED) --- */}
-                            {isInvited && (
-                                expired ? (
-                                    // NẾU QUÁ HẠN: KHÔNG HIỆN NÚT ACCEPT
-                                    <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded border border-rose-100 whitespace-nowrap">
-                                        Đã hết hạn trả lời
-                                    </span>
+                          {/* ✅ INVITED */}
+                          {isInvited &&
+                            (expired ? (
+                              <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded border border-rose-100 whitespace-nowrap">
+                                Đã hết hạn trả lời
+                              </span>
+                            ) : (
+                              <>
+                                {/* ✅ nếu là conference invite -> accept/decline bằng notificationApi */}
+                                {isConferenceRow ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleAcceptInvite(a._invite_id)}
+                                      className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
+                                      type="button"
+                                    >
+                                      Accept
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeclineInvite(a._invite_id)}
+                                      className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                                      type="button"
+                                    >
+                                      Decline
+                                    </button>
+                                  </>
                                 ) : (
-                                    // NẾU CÒN HẠN: HIỆN NÚT
-                                    <>
-                                        <button 
-                                            onClick={() => handleAccept(a.id)}
-                                            className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
-                                        >
-                                            Accept
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDecline(a.id)}
-                                            className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
-                                        >
-                                            Decline
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDeclareCOI(a.paper_id)}
-                                            className="px-3 py-1.5 rounded border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition"
-                                            title="Khai báo Xung đột lợi ích"
-                                        >
-                                            COI
-                                        </button>
-                                    </>
-                                )
-                            )}
+                                  <>
+                                    <button
+                                      onClick={() => handleAccept(a.id)}
+                                      className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
+                                      type="button"
+                                    >
+                                      Accept
+                                    </button>
+                                    <button
+                                      onClick={() => handleDecline(a.id)}
+                                      className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                                      type="button"
+                                    >
+                                      Decline
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeclareCOI(a.paper_id)}
+                                      className="px-3 py-1.5 rounded border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition"
+                                      title="Khai báo Xung đột lợi ích"
+                                      type="button"
+                                    >
+                                      COI
+                                    </button>
+                                  </>
+                                )}
+                              </>
+                            ))}
 
-                            {/* --- TRƯỜNG HỢP 2: BỊ CHẶN (COI) --- */}
-                            {isBlocked && a._blockedByCoi && (
-                                <button
-                                  onClick={() => handleResolveCoiAndAccept(a.paper_id, a.id)}
-                                  className="px-3 py-1.5 rounded bg-white border border-red-200 text-red-700 text-xs font-bold hover:bg-red-50"
-                                >
-                                  {resolvingByPaperId[a.paper_id] ? "Đang xử lý..." : "Gỡ COI"}
-                                </button>
-                            )}
+                          {/* COI */}
+                          {isBlocked && a._blockedByCoi && !isConferenceRow && (
+                            <button
+                              onClick={() => handleResolveCoiAndAccept(a.paper_id, a.id)}
+                              className="px-3 py-1.5 rounded bg-white border border-red-200 text-red-700 text-xs font-bold hover:bg-red-50"
+                              type="button"
+                            >
+                              {resolvingByPaperId[a.paper_id] ? "Đang xử lý..." : "Gỡ COI"}
+                            </button>
+                          )}
 
-                            {/* --- TRƯỜNG HỢP 3: HOÀN THÀNH (DONE) --- */}
-                            {isDone && (
-                                <button
-                                    onClick={() => navigate(`/reviewer/assignments/${a.id}`)}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-all shadow-sm"
-                                >
-                                    <span className="material-symbols-outlined text-sm">visibility</span>
-                                    Xem lại
-                                </button>
-                            )}
+                          {/* DONE */}
+                          {isDone && !isConferenceRow && (
+                            <button
+                              onClick={() => navigate(`/reviewer/assignments/${a.id}`)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-all shadow-sm"
+                              type="button"
+                            >
+                              <span className="material-symbols-outlined text-sm">visibility</span>
+                              Xem lại
+                            </button>
+                          )}
 
-                            {/* --- TRƯỜNG HỢP 4: ĐANG CHẤM (ACCEPTED) --- */}
-                            {isAccepted && (
-                                <button
-                                    onClick={() => navigate(`/reviewer/review/${a.id}`)}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-bold hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md ${
-                                        expired ? "bg-rose-600 hover:bg-rose-700" : "bg-primary hover:bg-primary/90"
-                                    }`}
-                                >
-                                    <span className="material-symbols-outlined text-sm">rate_review</span>
-                                    {expired ? "Chấm (Trễ hạn)" : "Bắt đầu chấm"}
-                                </button>
-                            )}
+                          {/* ACCEPTED */}
+                          {isAccepted && (
+                            isConferenceRow ? (
+                              <span className="text-xs font-bold text-slate-500">Đã phản hồi</span>
+                            ) : (
+                              <button
+                                onClick={() => navigate(`/reviewer/review/${a.id}`)}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-bold hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md ${
+                                  expired ? "bg-rose-600 hover:bg-rose-700" : "bg-primary hover:bg-primary/90"
+                                }`}
+                                type="button"
+                              >
+                                <span className="material-symbols-outlined text-sm">rate_review</span>
+                                {expired ? "Chấm (Trễ hạn)" : "Bắt đầu chấm"}
+                              </button>
+                            )
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -377,10 +596,131 @@ export default function MyAssignments() {
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination */}
+
         <div className="px-6 py-4 bg-slate-50 flex items-center justify-between text-xs text-slate-500 border-t border-slate-200">
-           <span>Hiển thị {computed.current.length} bản ghi</span>
+          <span>Hiển thị {computed.current.length} bản ghi</span>
+        </div>
+      </div>
+
+      {/* ================== TABLE 2: INVITES (BẢNG DƯỚI - CHỈ ROLE INVITE) ================== */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="px-6 py-5 border-b border-slate-100">
+          <h3 className="text-lg font-black text-slate-900">Thông báo lời mời phản biện</h3>
+          <p className="text-sm text-slate-500 mt-1">Nhận lời mời từ Chair để tham gia role Reviewer.</p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50">
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100">
+                  Người gửi
+                </th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100">
+                  Lời nhắn
+                </th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-center">
+                  Trạng thái
+                </th>
+                <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500 border-b border-slate-100 text-right">
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {/* Tabs của INVITES */}
+              <tr>
+                <td colSpan={4} className="px-6 py-3 bg-white border-b border-slate-100">
+                  <div className="flex gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto w-fit">
+                    {[
+                      { k: "all", l: "Tất cả", c: inviteComputed.allInv.length },
+                      { k: "pending", l: "Lời mời mới", c: inviteComputed.pending.length },
+                      { k: "accepted", l: "Đã chấp nhận", c: inviteComputed.accepted.length },
+                      { k: "declined", l: "Đã từ chối", c: inviteComputed.declined.length },
+                    ].map((t) => (
+                      <button
+                        key={t.k}
+                        onClick={() => setInviteTab(t.k)}
+                        className={`px-4 py-1.5 text-sm rounded-md transition-all whitespace-nowrap ${
+                          inviteTab === t.k
+                            ? "font-bold bg-white shadow-sm text-primary"
+                            : "font-medium text-slate-500 hover:text-slate-700"
+                        }`}
+                        type="button"
+                      >
+                        {t.l} <span className="opacity-60 text-xs ml-1">({t.c})</span>
+                      </button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+
+              {loadingInvites ? (
+                <tr>
+                  <td className="px-6 py-10 text-center text-slate-500" colSpan={4}>
+                    Đang tải lời mời...
+                  </td>
+                </tr>
+              ) : inviteComputed.current.length === 0 ? (
+                <tr>
+                  <td className="px-6 py-10 text-center text-slate-500" colSpan={4}>
+                    Không có lời mời.
+                  </td>
+                </tr>
+              ) : (
+                inviteComputed.current.map((inv) => {
+                  const st = (inv.status || "PENDING").toUpperCase();
+                  return (
+                    <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-900">Chair</div>
+                        <div className="text-xs text-slate-400">Hệ thống mời phản biện</div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-800 line-clamp-2">
+                          {inv.description || "Bạn được mời tham gia phản biện (role REVIEWER)."}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          Tới: <b>{inv.reviewer_email}</b>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 text-center">{inviteStatusBadge(st)}</td>
+
+                      <td className="px-6 py-4 text-right">
+                        {st === "PENDING" ? (
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleAcceptInvite(inv.id)}
+                              className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
+                              type="button"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => handleDeclineInvite(inv.id)}
+                              className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                              type="button"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-500">Đã phản hồi</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-6 py-4 bg-slate-50 flex items-center justify-between text-xs text-slate-500 border-t border-slate-200">
+          <span>Hiển thị {inviteComputed.current.length} lời mời</span>
         </div>
       </div>
     </div>

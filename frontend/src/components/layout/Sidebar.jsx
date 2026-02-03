@@ -161,7 +161,6 @@ export default function Sidebar() {
       { to: "/admin/users", label: "Quản lý Người dùng", icon: "group" }, 
       { to: "/admin/profile", label: "Hồ sơ cá nhân", icon: "person" },
       { to: "/admin/settings", label: "Cài đặt tài khoản", icon: "manage_accounts" },
-      { to: "/admin/audit", label: "Nhật ký hoạt động", icon: "history" },
     ];
   } else if (hasRole(ROLES.AUTHOR) && isAuthorArea) {
     currentArea = "AUTHOR";
@@ -185,6 +184,7 @@ export default function Sidebar() {
       { to: "/reviewer/bidding", label: "Chọn bài (Bidding)", icon: "pan_tool", end: true },
       { to: "/reviewer/assignments", label: "Bài được phân công", icon: "assignment", end: true },
       { to: "/reviewer/coi", label: "Khai báo mâu thuẫn", icon: "gavel", end: true },
+      { to: "/reviewer/notifications", label: "Thông báo", icon: "notifications", end: true },
       { to: "/reviewer/profile", label: "Hồ sơ cá nhân", icon: "person", end: true },
       { to: "/reviewer/settings", label: "Cài đặt tài khoản", icon: "manage_accounts", end: true },
     ];
@@ -199,7 +199,9 @@ export default function Sidebar() {
       { to: "/chair/tracks/create", label: "Tạo Track", icon: "add_circle" , end: true},
       { to: "/chair/camera-ready", label: "Camera-ready", icon: "description", end: true },
       { to: "/chair/proceedings", label: "Kỷ yếu", icon: "menu_book", end: true },
+      { to: "/chair/topics/create", label: "Tạo Topic", icon: "add_circle" , end: true},
       { to: "/chair/reviewers", label: "Quản lý Reviewer", icon: "group" , end: true},
+      { to: "/chair/reviewers/assign", label: "Phân công Reviewer", icon: "assignment_ind", end: true },
       { to: "/chair/profile", label: "Hồ sơ cá nhân", icon: "person", end: true },
       { to: "/chair/settings", label: "Cài đặt tài khoản", icon: "manage_accounts", end: true },
     ];

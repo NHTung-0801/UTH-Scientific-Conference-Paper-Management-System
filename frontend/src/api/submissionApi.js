@@ -74,3 +74,6 @@ export const chairApi = {
     return unwrap(res);
   },
 };
+export async function listOpenForBidding() {
+  return axiosClient.get(`${BASE}/open-for-bidding`);
+}

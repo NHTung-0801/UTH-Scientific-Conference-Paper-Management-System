@@ -162,3 +162,42 @@ class BidResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# =========================================================
+# ✅ NEW: REBUTTALS & EVALUATIONS SCHEMAS
+# =========================================================
+
+# ---------- Rebuttals ----------
+class RebuttalCreate(BaseModel):
+    paper_id: int
+    content: str
+
+class RebuttalUpdate(BaseModel):
+    content: Optional[str] = None
+
+class RebuttalOut(BaseModel):
+    id: int
+    paper_id: int
+    author_id: int
+    content: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+# ---------- Review Evaluations ----------
+class EvaluationCreate(BaseModel):
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    comment: str
+
+class EvaluationOut(BaseModel):
+    id: int
+    review_id: int
+    chair_id: int
+    rating: Optional[int]
+    comment: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

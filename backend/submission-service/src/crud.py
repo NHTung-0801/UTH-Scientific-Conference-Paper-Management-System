@@ -11,20 +11,23 @@ from .config import settings
 from sqlalchemy import func
 
 
-# Nghiệp vụ tạo bài báo mới
+# ====================================================
+# 1. CREATE PAPER (Nộp bài)
+# ====================================================
 def create_paper(
     db: Session, 
     paper_data: schemas.PaperCreate, 
     submitter_id: int
 ) -> models.Paper:
     
+    # Kiểm tra deadline bên Conference Service
     validate_submission_window(paper_data.conference_id)
 
+    # Kiểm tra trùng lặp (Logic NV: Không cho nộp trùng bài đang active)
     existing_paper = db.query(models.Paper).filter(
         models.Paper.submitter_id == submitter_id,
         models.Paper.conference_id == paper_data.conference_id,
         models.Paper.title == paper_data.title,
-        
         models.Paper.status.notin_([
             models.PaperStatus.WITHDRAWN, 
             models.PaperStatus.REJECTED
@@ -35,7 +38,6 @@ def create_paper(
         raise exceptions.BusinessRuleError(
             f"Duplicate submission: You already have an active paper titled '{paper_data.title}' in this conference."
         )
-    
 
     # Tạo bài báo
     db_paper = models.Paper(
@@ -50,9 +52,9 @@ def create_paper(
         submitted_at=datetime.utcnow()
     )
     db.add(db_paper)
-    db.flush() # Để lấy ID
+    db.flush() # Để lấy ID ngay
 
-    # 2. Lưu danh sách đồng tác giả
+    # Lưu danh sách đồng tác giả
     if paper_data.authors:
         db_authors = [
             models.PaperAuthor(
@@ -67,7 +69,7 @@ def create_paper(
         ]
         db.add_all(db_authors)
 
-    # 3. Lưu danh sách chủ đề
+    # Lưu danh sách chủ đề (Topics)
     if paper_data.topics:
         db_topics = [
             models.PaperTopic(
@@ -80,7 +82,10 @@ def create_paper(
 
     return db_paper
     
-# Tạo phiên bản đầu tiên
+
+# ====================================================
+# 2. CREATE VERSION (Tạo version file mới)
+# ====================================================
 def create_new_paper_version(
     db: Session, 
     paper_id: int, 
@@ -89,7 +94,7 @@ def create_new_paper_version(
     is_camera_ready: bool = False
 )-> models.PaperVersion:
     
-    # Lấy version mới nhất
+    # Lấy version mới nhất để tính số tiếp theo
     latest = (
         db.query(models.PaperVersion)
         .filter(models.PaperVersion.paper_id == paper_id)
@@ -99,7 +104,6 @@ def create_new_paper_version(
     )
     version_number = 1 if not latest else latest.version_number + 1
     
- 
     db_version = models.PaperVersion(
         paper_id=paper_id,
         version_number=version_number,
@@ -110,7 +114,10 @@ def create_new_paper_version(
     db.add(db_version)
     return db_version    
 
-# Nghiệp vụ lấy danh sách bài báo của tác giả
+
+# ====================================================
+# 3. GET PAPERS (Danh sách bài của Author)
+# ====================================================
 def get_papers_by_author(
     db: Session,
     submitter_id: int
@@ -127,14 +134,16 @@ def get_papers_by_author(
         .all()
     )
 
-# Nghiệp vụ lấy chi tiết bài báo
+
+# ====================================================
+# 4. GET DETAIL (Chi tiết bài của Author)
+# ====================================================
 def get_author_paper_detail(
     db: Session,
     paper_id: int,
     submitter_id: int
 ) -> models.Paper:
     
-    # Tìm bài báo theo id
     paper = (
             db.query(models.Paper)
             .options(
@@ -155,6 +164,7 @@ def get_author_paper_detail(
     return paper
 
 
+# Helper check quyền sở hữu
 def check_paper_ownership(db: Session, paper_id: int, submitter_id: int):
     paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
     if not paper:
@@ -165,6 +175,10 @@ def check_paper_ownership(db: Session, paper_id: int, submitter_id: int):
     
     return paper
 
+
+# ====================================================
+# 5. MANAGE AUTHORS (Thêm/Sửa/Xóa tác giả)
+# ====================================================
 def add_author(db: Session, paper_id: int, submitter_id: int, author_data: schemas.AuthorAdd):
     paper = check_paper_ownership(db, paper_id, submitter_id)
     
@@ -358,7 +372,8 @@ def upload_new_version(
 def validate_submission_window(conference_id: int):
     # Logic cũ của bạn (giữ nguyên, nhưng nhớ import requests nếu chưa có)
     try:
-        url = f"{settings.CONFERENCE_SERVICE_URL}/conferences/{conference_id}"
+        base = (settings.CONFERENCE_SERVICE_URL or "").rstrip("/")
+        url = f"{base}/api/conferences/{conference_id}"
         resp = requests.get(url, timeout=5)
         
         if resp.status_code != 200:
@@ -954,3 +969,45 @@ def list_conferences_with_camera_ready(db: Session) -> List[dict]:
         }
         for conf_id, cnt in rows
     ]
+
+
+def get_next_version_number(db: Session, paper_id: int) -> int:
+    last_ver = (
+        db.query(models.PaperVersion)
+        .filter(models.PaperVersion.paper_id == paper_id)
+        .order_by(desc(models.PaperVersion.version_number))
+        .first()
+    )
+    return 1 if not last_ver else last_ver.version_number + 1
+
+
+   
+def send_notification_email(to_email: str, subject: str, content: str):
+    payload = {
+        "email": to_email,
+        "subject": subject,
+        "content": content
+    }
+    
+    try:
+        requests.post(settings.NOTIFICATION_URL, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Failed to send email notification: {e}")
+
+
+def get_papers_for_bidding(db: Session, exclude_submitter_id: int = None) -> list[models.Paper]:
+    """
+    Lấy danh sách bài cho Reviewer chọn (Bidding).
+    """
+    query = (
+        db.query(models.Paper)
+        .options(
+            selectinload(models.Paper.topics),
+        )
+        .filter(models.Paper.status == models.PaperStatus.SUBMITTED)
+    )
+
+    if exclude_submitter_id:
+        query = query.filter(models.Paper.submitter_id != exclude_submitter_id)
+
+    return query.order_by(desc(models.Paper.submitted_at)).all()

@@ -1,9 +1,8 @@
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-
 class AIResponseBase(BaseModel):
-    processing_time: float
+    processing_time: float = 0.0
 
 # --- 1. Feature: Author Refine Text ---
 class RefineRequest(BaseModel):
@@ -16,13 +15,14 @@ class RefineResponse(BaseModel):
     changes: List[str]       # Danh sách các lỗi đã sửa
     keywords: List[str]      # Từ khóa gợi ý
 
-# --- 2. Feature: Reviewer Analysis ---
+# --- 2. Feature: Reviewer Analysis (UPDATED) ---
 class AnalyzeRequest(BaseModel):
-    abstract_text: str
+    abstract_text: Optional[str] = None
+    pdf_url: Optional[str] = None  # <--- Thêm trường này để nhận link PDF
 
 class AnalyzeResponse(BaseModel):
-    neutral_summary: str     # Tóm tắt trung lập
-    key_points: Dict[str, List[str]] # Trích xuất {claims: [], methods: []}
+    synopsis: str            # Đổi tên cho khớp với ai_reviewer.py
+    key_points: List[str]    # Đổi sang List[str] cho khớp với ai_reviewer.py
 
 # --- 3. Feature: Chair Match Reviewer ---
 class ReviewerCandidate(BaseModel):

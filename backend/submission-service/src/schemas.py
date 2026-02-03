@@ -217,3 +217,13 @@ class CameraReadyConferenceOut(BaseModel):
     conference_id: int
     conference_name: Optional[str] = None
     camera_ready_papers: int = 0
+class PaperBiddingResponse(BaseModel):
+    id: int
+    title: str
+    abstract: str
+    keywords: List[str] = []
+    track_id: int
+    topics: List[PaperTopicResponse] = []
+    submitted_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True

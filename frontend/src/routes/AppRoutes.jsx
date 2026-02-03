@@ -47,6 +47,7 @@ import COINew from "../pages/reviewer/COINew";
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
 import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
 import PaperBidding from "../pages/reviewer/PaperBidding";
+import ReviewerNotifications from "../pages/reviewer/ReviewerNotifications";
 
 // Admin Pages
 import AdminDashboard from "../pages/admin/AdminDashboard";
@@ -70,6 +71,8 @@ import ProceedingsPublishPage from "../pages/chair/ProceedingsPublishPage";
 import ProceedingsPublishSuccessPage from "../pages/chair/ProceedingsPublishSuccessPage";
 
 
+import CreateTopicPage from "../pages/chair/topics/CreateTopicPage";
+import ReviewerAssignmentPage from "../pages/chair/ReviewerAssignmentPage";
 const AppRoutes = () => {
   return (
     <Routes>
@@ -126,7 +129,9 @@ const AppRoutes = () => {
           <Route path="/chair/conferences/:id" element={<ConferenceDetailPage />} />
           <Route path="/chair/conferences/:id/edit" element={<ConferenceEditPage />} />
           <Route path="/chair/tracks/:id/edit" element={<TrackEditPage />} />
+          <Route path="/chair/topics/create" element={<CreateTopicPage />} />
           <Route path="/chair/reviewers" element={<ReviewerManagementPage />} />
+          <Route path="/chair/reviewers/assign" element={<ReviewerAssignmentPage />} />
           <Route path="/chair/profile" element={<ProfilePage />} /> 
           <Route path="/chair/settings" element={<AccountSettings />} />
           <Route path="/chair/camera-ready" element={<CameraReadyListPage />} />
@@ -142,8 +147,9 @@ const AppRoutes = () => {
         {/* REVIEWER */}
         <Route path="/reviewer" element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
           <Route index element={<ReviewerDashboard />} />
-          <Route path="profile" element={<ProfilePage />} /> {/* ✅ THÊM MỚI: Route Hồ sơ Phản biện */}
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="assignments" element={<MyAssignments />} />
+          <Route path="notifications" element={<ReviewerNotifications />} />
           <Route path="settings" element={<AccountSettings />} />
           <Route path="assignments/:assignmentId" element={<AssignmentDetail />} />
           <Route path="coi" element={<MyCOI />} />

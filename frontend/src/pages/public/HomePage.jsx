@@ -1,7 +1,8 @@
+// src/pages/public/HomePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import conferenceApi from "../../api/conferenceApi";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-
+import conferenceApi from "../../api/conferenceApi";
+import topicApi from "../../api/topicApi";
 
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8080";
 
@@ -26,6 +27,7 @@ function fmtDate(d) {
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // =======================
   // Proceedings list state
@@ -35,16 +37,32 @@ const HomePage = () => {
   const [proceedings, setProceedings] = useState([]);
   const [proQ, setProQ] = useState("");
 
+  // =======================
+  // Ongoing conferences state
+  // =======================
+  const [conferences, setConferences] = useState([]);
+  const [loadingOngoing, setLoadingOngoing] = useState(true);
+  const [tracksByConf, setTracksByConf] = useState({});
+  const [topicTagsByConf, setTopicTagsByConf] = useState({});
+
+  const buildLogoUrl = (logo) => {
+    if (!logo) return null;
+    if (String(logo).startsWith("http")) return logo;
+
+    // giữ logic cũ của bạn
+    if (String(logo).startsWith("/static/")) return `${API_BASE}/conference${logo}`;
+    if (String(logo).startsWith("static/")) return `${API_BASE}/conference/${logo}`;
+    return null;
+  };
+
+  // ===== Proceedings fetch
   useEffect(() => {
     const run = async () => {
       try {
         setProLoading(true);
         setProErr("");
-
-        // ✅ lấy list kỷ yếu đã publish từ conferenceApi (hàm bạn đã thêm)
         const list = await conferenceApi.getPublishedProceedingsForHome?.();
-        const arr = Array.isArray(list) ? list : [];
-        setProceedings(arr);
+        setProceedings(Array.isArray(list) ? list : []);
       } catch (e) {
         setProceedings([]);
         setProErr(e?.response?.data?.detail || e?.message || "Không tải được danh sách kỷ yếu.");
@@ -52,29 +70,88 @@ const HomePage = () => {
         setProLoading(false);
       }
     };
+    run();
+  }, []);
+
+  // ===== Ongoing conferences fetch (+ tracks + topics)
+  useEffect(() => {
+    const run = async () => {
+      setLoadingOngoing(true);
+      try {
+        const res = await conferenceApi.getAllConferences();
+        const list = Array.isArray(res) ? res : [];
+        setConferences(list);
+
+        const now = new Date();
+        const getStatus = (conf) => {
+          const start = new Date(conf.start_date);
+          const end = new Date(conf.end_date);
+          if (now < start) return "UPCOMING";
+          if (now > end) return "ENDED";
+          return "ONGOING";
+        };
+
+        const ongoing = list.filter((c) => getStatus(c) === "ONGOING");
+
+        const tracksMap = {};
+        const tagsMap = {};
+
+        await Promise.all(
+          ongoing.map(async (conf) => {
+            try {
+              const tracks = await conferenceApi.getTracksByConference(conf.id);
+              const trackList = Array.isArray(tracks) ? tracks : [];
+              tracksMap[conf.id] = trackList;
+
+              const allTopics = await Promise.all(
+                trackList.map(async (tr) => {
+                  try {
+                    const tp = await topicApi.getTopicsByTrack(tr.id);
+                    return Array.isArray(tp) ? tp : [];
+                  } catch {
+                    return [];
+                  }
+                })
+              );
+
+              const flat = allTopics.flat();
+              const uniq = Array.from(new Set(flat.map((t) => t?.name).filter(Boolean)));
+              tagsMap[conf.id] = uniq;
+            } catch {
+              tracksMap[conf.id] = [];
+              tagsMap[conf.id] = [];
+            }
+          })
+        );
+
+        setTracksByConf(tracksMap);
+        setTopicTagsByConf(tagsMap);
+      } catch {
+        setConferences([]);
+        setTracksByConf({});
+        setTopicTagsByConf({});
+      } finally {
+        setLoadingOngoing(false);
+      }
+    };
 
     run();
   }, []);
 
-  const location = useLocation();
-
+  // ===== hash scroll to proceedings
   useEffect(() => {
     if (location.hash !== "#proceedings") return;
-    if (proLoading) return; // ✅ chờ tải xong (tránh scroll lệch)
+    if (proLoading) return;
 
     const t = setTimeout(() => {
       const el = document.getElementById("proceedings");
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
-
-      // optional: focus ô tìm kiếm
       const input = document.getElementById("proceedings-search");
       input?.focus();
     }, 50);
 
     return () => clearTimeout(t);
   }, [location.hash, proLoading]);
-
-
 
   const filteredProceedings = useMemo(() => {
     const k = proQ.trim().toLowerCase();
@@ -88,6 +165,18 @@ const HomePage = () => {
       return t.includes(k) || c.includes(k) || pub.includes(k) || isbn.includes(k);
     });
   }, [proceedings, proQ]);
+
+  const ongoingConferences = useMemo(() => {
+    const now = new Date();
+    const getStatus = (conf) => {
+      const start = new Date(conf.start_date);
+      const end = new Date(conf.end_date);
+      if (now < start) return "UPCOMING";
+      if (now > end) return "ENDED";
+      return "ONGOING";
+    };
+    return (conferences || []).filter((c) => getStatus(c) === "ONGOING");
+  }, [conferences]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-text-dark dark:text-white antialiased overflow-x-hidden">
@@ -109,24 +198,18 @@ const HomePage = () => {
                 <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">
                   Trang chủ
                 </a>
-
                 <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#tracks">
                   Chuyên đề
                 </a>
-
                 <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#deadlines">
                   Hạn nộp
                 </a>
-
-                {/* ✅ TAB KỶ YẾU */}
                 <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#proceedings">
                   Kỷ yếu
                 </a>
-
                 <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">
                   Hỏi đáp
                 </a>
-
                 <Link className="text-sm font-medium leading-normal hover:text-primary transition-colors" to="/login">
                   Đăng nhập
                 </Link>
@@ -176,7 +259,8 @@ const HomePage = () => {
                     </h1>
 
                     <h2 className="text-lg text-gray-600 dark:text-gray-300 font-normal leading-relaxed">
-                      Thúc đẩy Đổi mới thông qua Nghiên cứu &amp; Hợp tác. Gặp gỡ các học giả hàng đầu và chuyên gia trong ngành tại Hội trường Chính.
+                      Thúc đẩy Đổi mới thông qua Nghiên cứu &amp; Hợp tác. Gặp gỡ các học giả hàng đầu và chuyên gia trong
+                      ngành tại Hội trường Chính.
                     </h2>
 
                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
@@ -206,7 +290,7 @@ const HomePage = () => {
             </div>
           </section>
 
-          {/* ===== TRACKS ===== */}
+          {/* ===== TRACKS (tích hợp lại từ code cũ) ===== */}
           <section
             className="w-full px-4 py-12 md:px-10 lg:px-20 bg-white dark:bg-[#1a0f0f] border-y border-[#f4f0f0] dark:border-[#2a1a1a]"
             id="tracks"
@@ -327,10 +411,138 @@ const HomePage = () => {
             </div>
           </section>
 
-          {/* ✅ ===== PROCEEDINGS LIST ===== */}
+          {/* ===== ONGOING CONFERENCES LIST ===== */}
+          <section className="w-full px-4 py-12 md:px-10 lg:px-20 bg-background-light dark:bg-[#150a0a]">
+            <div className="flex flex-col gap-8 @container">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div className="flex flex-col gap-2 max-w-[760px]">
+                  <h2 className="text-3xl font-bold leading-tight tracking-tight md:text-4xl dark:text-white">
+                    Hội nghị đang diễn ra
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-lg">
+                    Danh sách hội nghị hiện đang mở — xem nhanh track và các chủ đề (topic) liên quan.
+                  </p>
+                </div>
+
+                <Link to="/login" className="flex items-center gap-2 text-primary font-bold hover:underline whitespace-nowrap">
+                  Xem chi tiết
+                  <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                </Link>
+              </div>
+
+              {loadingOngoing ? (
+                <div className="bg-white dark:bg-[#211111] rounded-xl border border-[#e5dcdc] dark:border-[#3a2a2a] p-6 text-gray-600 dark:text-gray-400">
+                  Đang tải danh sách hội nghị...
+                </div>
+              ) : ongoingConferences.length === 0 ? (
+                <div className="bg-white dark:bg-[#211111] rounded-xl border border-[#e5dcdc] dark:border-[#3a2a2a] p-6 text-gray-600 dark:text-gray-400">
+                  Hiện chưa có hội nghị nào đang diễn ra.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {ongoingConferences.map((conf) => {
+                    const tracks = tracksByConf[conf.id] || [];
+                    const tags = topicTagsByConf[conf.id] || [];
+                    const logoUrl = buildLogoUrl(conf.logo) || "/placeholder-conference.jpg";
+
+                    return (
+                      <div
+                        key={conf.id}
+                        className="rounded-2xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] p-5 hover:shadow-lg transition"
+                      >
+                        <div className="flex gap-4">
+                          <div
+                            className="w-28 h-20 rounded-xl bg-cover bg-center flex-none border border-[#e5dcdc] dark:border-[#3a2a2a]"
+                            style={{ backgroundImage: `url("${logoUrl}")` }}
+                          />
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 text-[11px] font-bold">
+                                  <span className="size-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                                  Đang diễn ra
+                                </div>
+
+                                <h3 className="mt-2 text-lg font-black text-[#181111] dark:text-white truncate">
+                                  {conf.name}
+                                </h3>
+
+                                {conf.description ? (
+                                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                                    {conf.description}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <Link
+                                to="/login"
+                                className="flex items-center gap-2 h-10 px-4 rounded-lg bg-primary text-white font-bold text-sm hover:bg-red-700 transition-colors flex-none"
+                              >
+                                Nộp bài
+                              </Link>
+                            </div>
+
+                            <div className="mt-3">
+                              <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                Tracks
+                              </div>
+                              {tracks.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {tracks.slice(0, 6).map((t) => (
+                                    <span
+                                      key={t.id}
+                                      className="px-2 py-1 rounded-md bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-gray-200 text-[11px] font-semibold"
+                                    >
+                                      {t.name}
+                                    </span>
+                                  ))}
+                                  {tracks.length > 6 ? (
+                                    <span className="text-[11px] text-gray-400">+{tracks.length - 6}</span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">(Chưa có track)</div>
+                              )}
+                            </div>
+
+                            <div className="mt-4">
+                              <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                Topics
+                              </div>
+
+                              {tags.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {tags.slice(0, 10).map((tg, idx) => (
+                                    <span
+                                      key={`${conf.id}-tg-${idx}`}
+                                      className="px-2 py-1 rounded-full bg-primary/10 dark:bg-primary/20 text-primary text-[11px] font-bold"
+                                    >
+                                      {tg}
+                                    </span>
+                                  ))}
+                                  {tags.length > 10 ? (
+                                    <span className="text-[11px] text-gray-400">+{tags.length - 10}</span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">(Chưa có topic)</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ===== PROCEEDINGS LIST ===== */}
           <section
             id="proceedings"
-            className="w-full px-4 py-14 md:px-10 lg:px-20 bg-white dark:bg-[#1a0f0f] border-y border-[#f4f0f0] dark:border-[#2a1a1a]"
+            className="w-full px-4 py-14 md:px-10 lg:px-20 bg-white dark:bg-[#1a0f0f] border-y border-[#f4f0f0] dark:border-[#2a1a2a]"
           >
             <div className="flex flex-col gap-8 @container">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -377,11 +589,10 @@ const HomePage = () => {
                     const title = x?.proceedings_title || x?.title || "Proceedings";
 
                     return (
-                      <button
+                      <Link
                         key={conferenceId}
-                        type="button"
-                        onClick={() => navigate(`/proceedings/${conferenceId}`)}
-                        className="group text-left rounded-2xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] overflow-hidden transition-all hover:shadow-lg hover:border-primary/30"
+                        to={`/proceedings/${conferenceId}`}
+                        className="block w-full group text-left rounded-2xl border border-[#e5dcdc] dark:border-[#3a2a2a] bg-white dark:bg-[#211111] overflow-hidden transition-all hover:shadow-lg hover:border-primary/30"
                       >
                         <div className="relative aspect-[16/10] bg-gray-100 dark:bg-black/20 overflow-hidden">
                           {cover ? (
@@ -432,7 +643,7 @@ const HomePage = () => {
                             <span className="material-symbols-outlined text-sm">arrow_forward</span>
                           </div>
                         </div>
-                      </button>
+                      </Link>
                     );
                   })}
                 </div>
@@ -440,7 +651,7 @@ const HomePage = () => {
             </div>
           </section>
 
-          {/* ===== DEADLINES ===== */}
+          {/* ===== DEADLINES (tích hợp đầy đủ từ code cũ) ===== */}
           <section className="w-full px-4 py-16 md:px-10 lg:px-20" id="deadlines">
             <div className="flex flex-col gap-12 max-w-[1000px] mx-auto">
               <div className="text-center">
@@ -452,7 +663,7 @@ const HomePage = () => {
                 </p>
               </div>
 
-              {/* ✅ GIỮ NGUYÊN timeline của bạn (mình paste lại y như bạn) */}
+              {/* Desktop timeline */}
               <div className="relative hidden md:block">
                 <div className="absolute top-1/2 left-0 w-full h-1 bg-[#e5dcdc] dark:bg-[#3a2a2a] -translate-y-1/2 rounded-full"></div>
 
@@ -511,6 +722,7 @@ const HomePage = () => {
 
               <div className="hidden md:block h-24"></div>
 
+              {/* Mobile timeline */}
               <div className="flex flex-col md:hidden gap-6 relative pl-4 border-l-2 border-[#e5dcdc] dark:border-[#3a2a2a] ml-4">
                 <div className="flex flex-col gap-1 relative">
                   <div className="absolute -left-[21px] top-1 size-3 rounded-full bg-primary ring-4 ring-white dark:ring-[#211111]"></div>
@@ -547,7 +759,7 @@ const HomePage = () => {
           </section>
         </main>
 
-        {/* ================= FOOTER ================= */}
+        {/* ================= FOOTER (tích hợp đầy đủ từ code cũ) ================= */}
         <footer className="bg-white dark:bg-[#150a0a] border-t border-[#e5dcdc] dark:border-[#3a2a2a] pt-12 pb-8">
           <div className="max-w-[1440px] mx-auto px-4 md:px-10">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
@@ -568,20 +780,52 @@ const HomePage = () => {
               <div>
                 <h3 className="font-bold mb-4 dark:text-white">Liên kết nhanh</h3>
                 <ul className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <li><a className="hover:text-primary" href="#">Trang chủ</a></li>
-                  <li><a className="hover:text-primary" href="#">Kêu gọi viết bài</a></li>
-                  <li><Link className="hover:text-primary" to="/register">Đăng ký</Link></li>
-                  <li><a className="hover:text-primary" href="#">Ban tổ chức</a></li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Trang chủ
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Kêu gọi viết bài
+                    </a>
+                  </li>
+                  <li>
+                    <Link className="hover:text-primary" to="/register">
+                      Đăng ký
+                    </Link>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Ban tổ chức
+                    </a>
+                  </li>
                 </ul>
               </div>
 
               <div>
                 <h3 className="font-bold mb-4 dark:text-white">Tài nguyên</h3>
                 <ul className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <li><a className="hover:text-primary" href="#">Hướng dẫn tác giả</a></li>
-                  <li><a className="hover:text-primary" href="#">Hướng dẫn phản biện</a></li>
-                  <li><a className="hover:text-primary" href="#">Hội nghị trước</a></li>
-                  <li><a className="hover:text-primary" href="#">Hỗ trợ</a></li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hướng dẫn tác giả
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hướng dẫn phản biện
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hội nghị trước
+                    </a>
+                  </li>
+                  <li>
+                    <a className="hover:text-primary" href="#">
+                      Hỗ trợ
+                    </a>
+                  </li>
                 </ul>
               </div>
 
