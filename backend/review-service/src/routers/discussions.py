@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks  # <--- Import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from src.deps import get_db
 from src import crud, schemas
+from src.models import Assignment, AssignmentStatus # <--- Import để query danh sách Reviewer
 from src.security.deps import get_current_payload, require_roles
+from src.utils.notification_client import send_notification # <--- Import client thông báo
 
 router = APIRouter(prefix="/discussions", tags=["Review Discussions"])
 
@@ -46,6 +48,7 @@ async def _get_paper_author_id(paper_id: int) -> int:
 )
 async def create_discussion(
     data: schemas.DiscussionCreate,
+    background_tasks: BackgroundTasks, # <--- Inject BackgroundTasks
     db: Session = Depends(get_db),
     payload=Depends(get_current_payload),
 ):
@@ -79,6 +82,37 @@ async def create_discussion(
         sender_role = "REVIEWER"
     elif "CHAIR" in roles or "ADMIN" in roles:
         sender_role = "CHAIR"
+
+    # --- LOGIC GỬI THÔNG BÁO ---
+    
+    # 1. Nếu người gửi là AUTHOR -> Thông báo cho tất cả REVIEWER của bài đó
+    if sender_role == "AUTHOR":
+        assignments = db.query(Assignment).filter(
+            Assignment.paper_id == data.paper_id,
+            Assignment.status.in_([AssignmentStatus.ACCEPTED, AssignmentStatus.WAITING, AssignmentStatus.INVITED]) # Gửi cho cả người được mời
+        ).all()
+        
+        for assign in assignments:
+             background_tasks.add_task(
+                send_notification,
+                user_id=assign.reviewer_id,
+                subject=f"Phản hồi mới từ Tác giả (Bài #{data.paper_id})",
+                body=f"Tác giả vừa gửi tin nhắn trao đổi: \"{data.content[:50]}...\"",
+                paper_id=data.paper_id
+            )
+
+    # 2. Nếu người gửi là REVIEWER -> Thông báo cho AUTHOR
+    elif sender_role == "REVIEWER":
+        if paper_author_id != -1: # Đảm bảo tìm thấy ID tác giả
+            background_tasks.add_task(
+                send_notification,
+                user_id=paper_author_id,
+                subject=f"Phản hồi mới từ Ban Phản biện (Bài #{data.paper_id})",
+                body=f"Bạn nhận được một tin nhắn trao đổi mới về bài báo #{data.paper_id}.",
+                paper_id=data.paper_id
+            )
+            
+    # ---------------------------
 
     return {
         **new_msg.__dict__,

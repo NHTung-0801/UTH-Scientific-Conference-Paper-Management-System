@@ -13,7 +13,7 @@ from sqlalchemy import (
     Text,
     Enum,
     ForeignKey,
-    UniqueConstraint  # <--- QUAN TRỌNG: Phải có dòng này
+    UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 
@@ -41,7 +41,6 @@ class ConflictStatus(str, enum.Enum):
     OPEN = "Open"
     RESOLVED = "Resolved"
 
-# Định nghĩa BidType ở đầu để tránh lỗi tham chiếu
 class BidType(str, enum.Enum):
     YES = "YES"        # Rất muốn chấm
     MAYBE = "MAYBE"    # Có thể chấm
@@ -214,6 +213,53 @@ class Bid(Base):
     __table_args__ = (
         UniqueConstraint('reviewer_id', 'paper_id', name='unique_bid_reviewer_paper'),
     )
+
+
+# =========================================================
+# REBUTTALS (Giải trình của tác giả)
+# =========================================================
+
+class Rebuttal(Base):
+    __tablename__ = "rebuttals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    paper_id = Column(Integer, nullable=False, index=True)
+    author_id = Column(Integer, nullable=False)  # ID của tác giả nộp
+    
+    content = Column(Text, nullable=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# =========================================================
+# REVIEW EVALUATIONS (Đánh giá chất lượng bài Review bởi Chair)
+# =========================================================
+
+class ReviewEvaluation(Base):
+    __tablename__ = "review_evaluations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    review_id = Column(
+        Integer, 
+        ForeignKey("reviews.id", ondelete="CASCADE"), 
+        nullable=False, 
+        index=True
+    )
+    
+    chair_id = Column(Integer, nullable=False) # Người đánh giá (Chair)
+    
+    rating = Column(Integer, nullable=True) # VD: 1-5 sao cho chất lượng review
+    comment = Column(Text, nullable=True)   # Nhận xét công khai cho Reviewer thấy
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# =========================================================
+# Pydantic Schemas (Auxiliary)
+# =========================================================
 
 class DiscussionCreate(BaseModel):
     paper_id: int

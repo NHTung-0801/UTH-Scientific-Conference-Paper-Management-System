@@ -184,6 +184,7 @@ export default function Sidebar() {
       { to: "/reviewer/bidding", label: "Chọn bài (Bidding)", icon: "pan_tool", end: true },
       { to: "/reviewer/assignments", label: "Bài được phân công", icon: "assignment", end: true },
       { to: "/reviewer/coi", label: "Khai báo mâu thuẫn", icon: "gavel", end: true },
+      { to: "/reviewer/notifications", label: "Thông báo", icon: "notifications", end: true },
       { to: "/reviewer/profile", label: "Hồ sơ cá nhân", icon: "person", end: true },
       { to: "/reviewer/settings", label: "Cài đặt tài khoản", icon: "manage_accounts", end: true },
     ];

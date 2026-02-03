@@ -1,10 +1,103 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+// src/pages/reviewer/ReviewWorkspace.jsx
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { toast } from "react-toastify";
-import axios from "axios"; // Dùng để gọi API Rebuttal
+import axiosClient from "../../api/axiosClient"; 
 import reviewApi from "../../api/reviewApi";
 import ReviewForm from "./ReviewForm";
 import ReviewDiscussion from "./ReviewDiscussion";
+
+// --- COMPONENT AI ANALYSIS ---
+const AIAnalysisSection = ({ paperId }) => {
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchAIAnalysis = async () => {
+    if (!paperId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await axiosClient.get(`/intelligent/papers/${paperId}/analyze`);
+      setAnalysis(res.data || res); 
+    } catch (err) {
+      console.error("AI Error:", err);
+      let msg = "Không thể phân tích bài báo này.";
+      if (err.response?.status === 404) msg = "AI chưa tìm thấy dữ liệu bài báo này.";
+      if (err.response?.status === 401) msg = "Phiên đăng nhập hết hạn. Hãy F5 hoặc đăng nhập lại.";
+      if (err.response?.status === 500) msg = "Lỗi hệ thống AI. Vui lòng thử lại sau.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-indigo-100 overflow-hidden mb-6 animate-in fade-in slide-in-from-top-2">
+      <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center">
+        <h3 className="font-bold text-indigo-900 flex items-center gap-2">
+           <span className="material-symbols-outlined text-indigo-600">smart_toy</span> 
+           AI Assistant Analysis
+        </h3>
+        {!analysis && !loading && (
+           <button 
+             onClick={fetchAIAnalysis} 
+             className="text-xs font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors shadow-sm flex items-center gap-1"
+           >
+             <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+             Phân tích ngay
+           </button>
+        )}
+      </div>
+      
+      <div className="p-4">
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-4 text-indigo-500 gap-2">
+            <span className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></span>
+            <span className="text-sm font-medium animate-pulse">Đang đọc bài báo và suy nghĩ...</span>
+          </div>
+        )}
+        
+        {error && (
+          <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-start gap-2">
+            <span className="material-symbols-outlined text-lg mt-0.5">error</span>
+            <span>{error}</span>
+          </div>
+        )}
+        
+        {analysis && (
+          <div className="space-y-4">
+             <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Tóm tắt (Synopsis)</label>
+                <p className="text-sm text-slate-800 leading-relaxed text-justify">
+                  {analysis.synopsis}
+                </p>
+             </div>
+             <div>
+                <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Ý chính (Key Points)</label>
+                <ul className="space-y-2">
+                  {analysis.key_points?.map((point, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-sm text-slate-700 bg-white p-2 rounded border border-slate-100 shadow-sm">
+                       <span className="material-symbols-outlined text-emerald-500 text-lg shrink-0">check_circle</span>
+                       <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+             </div>
+          </div>
+        )}
+
+        {!analysis && !loading && !error && (
+          <div className="text-center py-6 text-slate-400 text-sm bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+             Bấm nút <b>"Phân tích ngay"</b> để AI tóm tắt và đánh giá sơ bộ bài báo này giúp bạn.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------
 
 const ReviewWorkspace = () => {
   const { assignmentId } = useParams();
@@ -13,13 +106,15 @@ const ReviewWorkspace = () => {
   // --- UI STATES ---
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("standard"); // 'standard' | 'split'
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null); // URL blob để hiển thị PDF
+  const [loadingPdf, setLoadingPdf] = useState(false);
 
   // --- DATA STATES ---
   const [assignment, setAssignment] = useState(null);
   const [paper, setPaper] = useState(null);
-  const [rebuttal, setRebuttal] = useState(null); // <--- State lưu phản biện
+  const [rebuttal, setRebuttal] = useState(null);
   const [blockedByCoi, setBlockedByCoi] = useState(false);
-  const [coiInfo, setCoiInfo] = useState(null);
+  // [FIX] Removed unused coiInfo state
 
   // --- REVIEW STATES ---
   const [reviewId, setReviewId] = useState(null);
@@ -47,29 +142,39 @@ const ReviewWorkspace = () => {
     },
   });
 
-  // Helper hiển thị thời gian
   const formatTime = (date) => date.toLocaleTimeString("vi-VN", { hour: '2-digit', minute:'2-digit' });
 
-  // Tính toán Deadline
   const isOverdue = useMemo(() => {
     if (!assignment?.due_date) return false;
     return new Date() > new Date(assignment.due_date);
   }, [assignment]);
 
-  // Lấy URL PDF
-  const pdfUrl = useMemo(() => {
-      if (paper?.versions && paper.versions.length > 0) {
-          return paper.versions[0].file_url;
+  // Hàm tải PDF dưới dạng Blob để xem và tải
+  const fetchPdfBlob = useCallback(async (id) => {
+      try {
+          setLoadingPdf(true);
+          const response = await reviewApi.downloadPaper(id);
+          
+          // Kiểm tra blob
+          const blobData = response.data instanceof Blob ? response.data : response;
+          if (blobData instanceof Blob) {
+             const url = window.URL.createObjectURL(blobData);
+             setPdfBlobUrl(url);
+          }
+      } catch (error) {
+          console.error("Failed to load PDF blob:", error);
+          toast.warning("Không thể tải trước file PDF. Vui lòng thử tải về máy.");
+      } finally {
+          setLoadingPdf(false);
       }
-      return null;
-  }, [paper]);
+  }, []);
 
-  // Tự động chuyển sang Split View nếu có PDF và màn hình lớn
+  // [FIX] Thêm pdfBlobUrl vào dependency
   useEffect(() => {
-    if (pdfUrl && window.innerWidth > 1024) {
-        setViewMode("split");
-    }
-  }, [pdfUrl]);
+      if (pdfBlobUrl && window.innerWidth > 1024) {
+          setViewMode("split"); // Tự động bật split view nếu tải xong
+      }
+  }, [pdfBlobUrl]);
 
   useEffect(() => {
     const ensureAssignmentAccepted = async (a) => {
@@ -96,7 +201,7 @@ const ReviewWorkspace = () => {
       try {
         setLoading(true);
         setBlockedByCoi(false);
-        setCoiInfo(null);
+        // setCoiInfo(null); // Removed
         setIsSubmitted(false);
         setRebuttal(null);
 
@@ -114,42 +219,32 @@ const ReviewWorkspace = () => {
         const openCoi = await checkOpenCoiForPaper(paperId);
         if (openCoi) {
           setBlockedByCoi(true);
-          setCoiInfo(openCoi);
+          // setCoiInfo(openCoi); // Removed
         }
 
         if (a.paper) {
           setPaper(a.paper);
         } else {
-          // Fallback fetch PDF URL
-          let url = "";
-          try {
-             const pdfRes = await reviewApi.getPaperPdfUrlByAssignment(assignmentId);
-             url = (pdfRes.data || pdfRes).pdf_url || "";
-          } catch(ignore) {}
-
           setPaper({
              id: paperId,
              title: a.paper_title || a.title || `Paper #${paperId}`,
              abstract: a.paper_abstract || "Nội dung tóm tắt đang được bảo mật.",
-             versions: url ? [{ file_url: url }] : []
+             versions: []
           });
         }
 
-        // --- 👇 LẤY REBUTTAL (PHẢN BIỆN CỦA TÁC GIẢ) 👇 ---
+        // --- FETCH REBUTTAL ---
         if (paperId && !openCoi) {
             try {
-                // Gọi trực tiếp axios vì chưa có trong reviewApi
-                const token = localStorage.getItem("token");
-                const rebRes = await axios.get(`http://localhost:8080/review/rebuttals/paper/${paperId}`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setRebuttal(rebRes.data);
+                const rebRes = await axiosClient.get(`/review/rebuttals/paper/${paperId}`);
+                setRebuttal(rebRes.data || rebRes);
             } catch (e) {
-                // 404 nghĩa là chưa có rebuttal -> Không làm gì cả
                 setRebuttal(null);
             }
+            
+            // Gọi hàm tải PDF blob ngay khi load xong thông tin
+            fetchPdfBlob(assignmentId);
         }
-        // --------------------------------------------------
 
         if (openCoi) return; 
 
@@ -198,7 +293,13 @@ const ReviewWorkspace = () => {
       }
     };
     if (assignmentId) fetchData();
-  }, [assignmentId]);
+    
+    // Cleanup URL blob khi unmount
+    return () => {
+        if (pdfBlobUrl) window.URL.revokeObjectURL(pdfBlobUrl);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentId]); // Giữ deps đơn giản để tránh re-fetch loop
 
   // Tính điểm
   useEffect(() => {
@@ -208,47 +309,15 @@ const ReviewWorkspace = () => {
     setForm(prev => (prev.final_score === rounded) ? prev : { ...prev, final_score: rounded });
   }, [form.criterias]);
 
-  // Auto Save
-  useEffect(() => {
-    if (loading || isSubmitted || isFirstLoad.current) { isFirstLoad.current = false; return; }
-    const timer = setTimeout(() => { onSave(true, true); }, 2000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form]);
 
-  // --- Handlers ---
-  const handleCriteriaChange = (key, field, value) => {
-    if (isSubmitted) return; 
-    setForm((prev) => ({ ...prev, criterias: { ...prev.criterias, [key]: { ...prev.criterias[key], [field]: value } } }));
-  };
-
-  const handleFieldChange = (field, value) => {
-    if (isSubmitted) return; 
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const validate = () => {
+  const validate = useCallback(() => {
     if (form.final_score <= 0) return "Vui lòng chấm điểm các tiêu chí";
     if (!form.content_author.trim()) return "Vui lòng nhập nhận xét cho tác giả";
     return null;
-  };
+  }, [form]);
 
-  const handleReopen = async () => {
-    if (!window.confirm("Bạn muốn chỉnh sửa lại kết quả đánh giá? Bài chấm sẽ chuyển về trạng thái NHÁP.")) return;
-    setSaving(true);
-    try {
-        await reviewApi.updateReview(reviewId, { is_draft: true });
-        setIsSubmitted(false); 
-        toast.success("Đã mở lại bài chấm (Chế độ Nháp)");
-        setForm(prev => ({ ...prev, is_draft: true }));
-    } catch (e) {
-        toast.error("Không thể mở lại bài chấm: " + (e?.response?.data?.detail || e.message));
-    } finally {
-        setSaving(false);
-    }
-  };
-
-  const onSave = async (isDraft = true, silent = false) => {
+  // [FIX] Wrapped onSave with useCallback to use in useEffect
+  const onSave = useCallback(async (isDraft = true, silent = false) => {
     if (isSubmitted && !silent) { toast.info("Bài đã nộp. Vui lòng bấm 'Chỉnh sửa lại'."); return; }
     const err = (!isDraft && !silent) ? validate() : null;
     if (err) { toast.warning(err); return; }
@@ -311,9 +380,58 @@ const ReviewWorkspace = () => {
     } finally {
       if (silent) setIsAutoSaving(false); else setSaving(false);
     }
+  }, [assignmentId, criteriaIdMap, form, isSubmitted, navigate, reviewId, validate]);
+
+  // Auto Save
+  // [FIX] Added dependencies
+  useEffect(() => {
+    if (loading || isSubmitted || isFirstLoad.current) { isFirstLoad.current = false; return; }
+    const timer = setTimeout(() => { onSave(true, true); }, 2000);
+    return () => clearTimeout(timer);
+  }, [form, isSubmitted, loading, onSave]);
+
+  // --- Handlers ---
+  const handleCriteriaChange = (key, field, value) => {
+    if (isSubmitted) return; 
+    setForm((prev) => ({ ...prev, criterias: { ...prev.criterias, [key]: { ...prev.criterias[key], [field]: value } } }));
   };
 
-  // --- Sub-component: REBUTTAL DISPLAY ---
+  const handleFieldChange = (field, value) => {
+    if (isSubmitted) return; 
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleReopen = async () => {
+    if (!window.confirm("Bạn muốn chỉnh sửa lại kết quả đánh giá? Bài chấm sẽ chuyển về trạng thái NHÁP.")) return;
+    setSaving(true);
+    try {
+        await reviewApi.updateReview(reviewId, { is_draft: true });
+        setIsSubmitted(false); 
+        toast.success("Đã mở lại bài chấm (Chế độ Nháp)");
+        setForm(prev => ({ ...prev, is_draft: true }));
+    } catch (e) {
+        toast.error("Không thể mở lại bài chấm: " + (e?.response?.data?.detail || e.message));
+    } finally {
+        setSaving(false);
+    }
+  };
+
+  const downloadPdfFile = () => {
+     if (pdfBlobUrl) {
+         const link = document.createElement('a');
+         link.href = pdfBlobUrl;
+         link.setAttribute('download', `Assignment_${assignmentId}_Paper.pdf`);
+         document.body.appendChild(link);
+         link.click();
+         link.remove();
+     } else {
+         fetchPdfBlob(assignmentId).then(() => {
+             // Logic fetchPdfBlob sẽ set state, user cần bấm lại hoặc tự kích hoạt nếu muốn
+             toast.info("Đang tải file...");
+         });
+     }
+  };
+
   const RebuttalSection = () => {
       if (!rebuttal) return null;
       return (
@@ -343,7 +461,6 @@ const ReviewWorkspace = () => {
 
   return (
     <div className="bg-[#f8f9fa] h-screen flex flex-col overflow-hidden">
-      {/* --- HEADER --- */}
       <header className="bg-white border-b border-slate-200 shrink-0 z-20 shadow-sm h-16 flex items-center px-4 justify-between">
           <div className="flex items-center gap-4 min-w-0">
             <button onClick={() => navigate("/reviewer/assignments")} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
@@ -358,7 +475,6 @@ const ReviewWorkspace = () => {
           </div>
 
           <div className="flex items-center gap-3">
-             {/* Toggle View Mode Button */}
              <div className="hidden lg:flex bg-slate-100 rounded-lg p-1 mr-2 border border-slate-200">
                 <button 
                    onClick={() => setViewMode("standard")}
@@ -370,15 +486,14 @@ const ReviewWorkspace = () => {
                 <button 
                    onClick={() => setViewMode("split")}
                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'split' ? 'bg-white text-[#1976d2] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                   disabled={!pdfUrl}
-                   title={!pdfUrl ? "Không có file PDF để xem" : "Vừa đọc vừa chấm"}
+                   disabled={!pdfBlobUrl}
+                   title={!pdfBlobUrl ? "Đang tải file PDF..." : "Vừa đọc vừa chấm"}
                 >
-                   <span className="material-symbols-outlined text-sm">vertical_split</span>
+                   {loadingPdf ? <span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin mr-1"></span> : <span className="material-symbols-outlined text-sm">vertical_split</span>}
                    Split View
                 </button>
              </div>
 
-             {/* Action Buttons */}
              {!isSubmitted ? (
                 <>
                   <button disabled={saving} onClick={() => onSave(true, false)} className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 disabled:opacity-50">
@@ -403,15 +518,11 @@ const ReviewWorkspace = () => {
           </div>
       </header>
 
-      {/* --- MAIN CONTENT --- */}
-      {viewMode === "split" && pdfUrl ? (
-        // === SPLIT VIEW LAYOUT ===
+      {viewMode === "split" && pdfBlobUrl ? (
         <div className="flex flex-1 overflow-hidden">
-           {/* LEFT: PDF Viewer */}
            <div className="w-1/2 h-full border-r border-slate-200 bg-slate-50 flex flex-col items-center justify-center">
-              {/* Dùng thẻ object để ép hiển thị PDF */}
               <object 
-                 data={`${pdfUrl}#view=FitH&toolbar=0`} 
+                 data={`${pdfBlobUrl}#view=FitH&toolbar=0`} 
                  type="application/pdf" 
                  className="w-full h-full"
                  width="100%"
@@ -420,17 +531,17 @@ const ReviewWorkspace = () => {
                  <div className="text-center p-6">
                     <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">picture_as_pdf</span>
                     <p className="text-slate-500 mb-4">Trình duyệt không hỗ trợ xem trực tiếp.</p>
-                    <a href={pdfUrl} target="_blank" rel="noreferrer" className="px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90">
+                    <button onClick={downloadPdfFile} className="px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90">
                        Tải file về máy
-                    </a>
+                    </button>
                  </div>
               </object>
            </div>
 
-           {/* RIGHT: Grading Form */}
            <div className="w-1/2 h-full overflow-y-auto bg-[#f8f9fa] p-6 custom-scrollbar">
               <div className="max-w-3xl mx-auto space-y-6">
-                 {/* Discussion Mini-view */}
+                 <AIAnalysisSection paperId={paper?.id} />
+
                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                        <h3 className="font-bold text-slate-800 text-sm">Thảo luận</h3>
@@ -441,7 +552,6 @@ const ReviewWorkspace = () => {
                     </div>
                  </div>
 
-                 {/* REBUTTAL SECTION */}
                  <RebuttalSection />
 
                  <ReviewForm form={form} onCriteriaChange={handleCriteriaChange} onFieldChange={handleFieldChange} />
@@ -455,7 +565,6 @@ const ReviewWorkspace = () => {
            </div>
         </div>
       ) : (
-        // === STANDARD VIEW LAYOUT (Cũ) ===
         <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 w-full overflow-y-auto h-full pb-20 custom-scrollbar">
             <div className="lg:col-span-4 space-y-6">
               <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
@@ -473,15 +582,22 @@ const ReviewWorkspace = () => {
                           {paper?.abstract || "Không có nội dung."}
                         </div>
                     </div>
-                    {pdfUrl && (
+                    {pdfBlobUrl ? (
                       <div className="pt-2">
-                          <a href={pdfUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2.5 border border-primary/20 bg-primary/5 text-primary font-bold rounded-xl hover:bg-primary/10">
+                          <button onClick={() => window.open(pdfBlobUrl, '_blank')} className="flex items-center justify-center gap-2 w-full py-2.5 border border-primary/20 bg-primary/5 text-primary font-bold rounded-xl hover:bg-primary/10">
                             <span className="material-symbols-outlined">open_in_new</span> Mở PDF tab mới
-                          </a>
+                          </button>
                       </div>
+                    ) : (
+                       <div className="pt-2 text-center text-xs text-slate-400">
+                          {loadingPdf ? "Đang tải PDF..." : "Không có file PDF"}
+                       </div>
                     )}
                   </div>
               </div>
+
+              <AIAnalysisSection paperId={paper?.id} />
+              
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800">Thảo luận</h3>
@@ -494,7 +610,6 @@ const ReviewWorkspace = () => {
             </div>
 
             <div className="lg:col-span-8">
-              {/* REBUTTAL SECTION */}
               <RebuttalSection />
 
               <ReviewForm form={form} onCriteriaChange={handleCriteriaChange} onFieldChange={handleFieldChange} />

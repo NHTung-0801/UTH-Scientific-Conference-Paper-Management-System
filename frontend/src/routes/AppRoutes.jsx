@@ -43,6 +43,7 @@ import COINew from "../pages/reviewer/COINew";
 import ReviewWorkspace from "../pages/reviewer/ReviewWorkspace";
 import ReviewDiscussion from "../pages/reviewer/ReviewDiscussion";
 import PaperBidding from "../pages/reviewer/PaperBidding";
+import ReviewerNotifications from "../pages/reviewer/ReviewerNotifications";
 
 // Admin Pages
 import AdminDashboard from "../pages/admin/AdminDashboard";
@@ -125,8 +126,9 @@ const AppRoutes = () => {
         {/* REVIEWER */}
         <Route path="/reviewer" element={<PrivateRoute allowedRoles={[ROLES.REVIEWER, ROLES.ADMIN]} />}>
           <Route index element={<ReviewerDashboard />} />
-          <Route path="profile" element={<ProfilePage />} /> {/* ✅ THÊM MỚI: Route Hồ sơ Phản biện */}
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="assignments" element={<MyAssignments />} />
+          <Route path="notifications" element={<ReviewerNotifications />} />
           <Route path="settings" element={<AccountSettings />} />
           <Route path="assignments/:assignmentId" element={<AssignmentDetail />} />
           <Route path="coi" element={<MyCOI />} />
