@@ -49,7 +49,7 @@ const statusBadge = (status) => {
   );
 };
 
-// Badge trạng thái cho INVITE
+// Badge trạng thái cho INVITE (bảng dưới - role invite)
 const inviteStatusBadge = (stRaw) => {
   const st = (stRaw || "PENDING").toUpperCase();
   const cls =
@@ -68,13 +68,70 @@ const inviteStatusBadge = (stRaw) => {
   );
 };
 
+/** ✅ xác định invite loại “hội nghị” (gửi từ ReviewerAssignmentPage)
+ *  Heuristic: có conference_id / conference_name / track_id / topic_id / track_name / topic_name
+ */
+const isConferenceInvite = (inv) => {
+  if (!inv) return false;
+  return Boolean(
+    inv.conference_id ||
+      inv.conferenceId ||
+      inv.conference_name ||
+      inv.conferenceName ||
+      inv.track_id ||
+      inv.trackId ||
+      inv.topic_id ||
+      inv.topicId ||
+      inv.track_name ||
+      inv.trackName ||
+      inv.topic_name ||
+      inv.topicName
+  );
+};
+
+/** ✅ map conference invite -> row giống assignment để đẩy lên bảng trên */
+const mapConferenceInviteToAssignmentRow = (inv) => {
+  const st = (inv.status || "PENDING").toUpperCase();
+
+  const uiStatus =
+    st === "PENDING" ? "Invited" : st === "ACCEPTED" ? "Accepted" : "Declined";
+
+  const confName = inv.conference_name || inv.conferenceName || inv.conference?.name || "Hội nghị";
+  const trackName = inv.track_name || inv.trackName || "";
+  const topicName = inv.topic_name || inv.topicName || "";
+
+  const titleParts = [`[Mời hội nghị] ${confName}`];
+  if (trackName) titleParts.push(`Track: ${trackName}`);
+  if (topicName) titleParts.push(`Topic: ${topicName}`);
+
+  return {
+    // giả lập structure assignment
+    id: `conf-inv-${inv.id}`,          // để không đụng assignment id
+    _kind: "conference_invite",        // để render action đúng
+    _invite_id: inv.id,               // id thật để accept/decline
+
+    // các field đang dùng trong UI bảng trên
+    paper_title: titleParts.join(" • "),
+    paper_id: `INV-${inv.id}`,         // để hiển thị Paper ID cho giống layout (không null)
+    due_date: inv.due_date || inv.expires_at || inv.expired_at || null,
+
+    _ui_status: uiStatus,
+    _blockedByCoi: false,
+
+    // giữ raw nếu sau này cần show thêm
+    _raw_inv: inv,
+  };
+};
+
 export default function MyAssignments() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // ✅ bảng dưới: chỉ giữ role invites
   const [invites, setInvites] = useState([]);
   const [loadingInvites, setLoadingInvites] = useState(true);
 
+  // ✅ bảng trên: assignments + conference invites
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [items, setItems] = useState([]);
@@ -86,10 +143,10 @@ export default function MyAssignments() {
   // Tabs cho ASSIGNMENTS
   const [tab, setTab] = useState("all");
 
-  // Tabs cho INVITES
+  // Tabs cho INVITES (bảng dưới)
   const [inviteTab, setInviteTab] = useState("all"); // all | pending | accepted | declined
 
-  // --- HÀM KIỂM TRA QUÁ HẠN ---
+  
   const isOverdue = (dateStr) => {
     if (!dateStr) return false;
     return new Date() > new Date(dateStr);
@@ -122,14 +179,21 @@ export default function MyAssignments() {
     setLoading(true);
     setErr("");
 
-    // load invites (riêng)
+    // ✅ load invites (tách 2 loại)
     setLoadingInvites(true);
+    let roleInvites = [];
+    let conferenceInvites = [];
     try {
       const invRes = await notificationApi.getMyReviewerInvitations();
       const invList = Array.isArray(invRes) ? invRes : (invRes?.data || []);
-      setInvites(invList);
+
+      conferenceInvites = invList.filter(isConferenceInvite);
+      roleInvites = invList.filter((x) => !isConferenceInvite(x));
+
+      setInvites(roleInvites); // bảng dưới chỉ show role invite
     } catch (e) {
       setInvites([]);
+      conferenceInvites = [];
     } finally {
       setLoadingInvites(false);
     }
@@ -149,12 +213,12 @@ export default function MyAssignments() {
       );
       // [FIX] Removed setOpenCoiPaperIds(openSet)
 
-      // 3. Enrich Data (Check Submitted)
+      // 3. Enrich Assignments (Check Submitted)
       const enrichedAssignments = await Promise.all(
         assignments.map(async (a) => {
           let aStatus = (a.status?.value ?? a.status ?? "").toString();
 
-          // Nếu Accepted -> Check review submitted
+          
           if (aStatus.toLowerCase() === "accepted") {
             try {
               const reviewsRes = await reviewApi.listReviews({ assignmentId: a.id });
@@ -171,14 +235,20 @@ export default function MyAssignments() {
 
           return {
             ...a,
+            _kind: "assignment",
             _ui_status: blockedByCoi ? "COI" : aStatus,
             _blockedByCoi: blockedByCoi,
           };
         })
       );
 
-      // Sort: Invited lên đầu, sau đó đến Accepted
-      enrichedAssignments.sort((a, b) => {
+      // ✅ 4. Map conference invites -> rows và merge vào bảng trên
+      const confInviteRows = (conferenceInvites || []).map(mapConferenceInviteToAssignmentRow);
+
+      const mergedTop = [...confInviteRows, ...enrichedAssignments];
+
+      // Sort: Invited lên đầu, sau đó Accepted
+      mergedTop.sort((a, b) => {
         const score = (s) => {
           s = (s || "").toLowerCase();
           if (s === "invited") return 0;
@@ -188,8 +258,7 @@ export default function MyAssignments() {
         return score(a._ui_status) - score(b._ui_status);
       });
 
-      setItems(enrichedAssignments);
-      
+      setItems(mergedTop);
     } catch (e) {
       setErr(e?.response?.data?.detail || e?.message || "Không tải được assignments");
     } finally {
@@ -249,7 +318,7 @@ export default function MyAssignments() {
     }
   };
 
-  // ====== computed ASSIGNMENTS ======
+  // ====== computed ASSIGNMENTS (bảng trên) ======
   const computed = useMemo(() => {
     const all = items || [];
 
@@ -272,7 +341,7 @@ export default function MyAssignments() {
     return { all, invited, todo, done, blocked, current };
   }, [items, tab]);
 
-  // ====== computed INVITES (riêng) ======
+  // ====== computed INVITES (bảng dưới - role invite) ======
   const inviteComputed = useMemo(() => {
     const allInv = invites || [];
     const pending = allInv.filter((x) => (x.status || "").toUpperCase() === "PENDING");
@@ -304,7 +373,7 @@ export default function MyAssignments() {
         </div>
       )}
 
-      {/* ================== TABLE 1: ASSIGNMENTS (GIỮ NGUYÊN) ================== */}
+      {/* ================== TABLE 1: ASSIGNMENTS (GIỮ NGUYÊN + THÊM LỜI MỜI HỘI NGHỊ) ================== */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6 shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -355,10 +424,8 @@ export default function MyAssignments() {
                 </td>
               </tr>
 
-
-              
               {loading ? (
-
+                
                 <tr>
                   <td className="px-6 py-10 text-center text-slate-500" colSpan={5}>
                     Đang tải...
@@ -378,19 +445,28 @@ export default function MyAssignments() {
                   const isAccepted = s === "accepted";
                   const isInvited = s === "invited";
 
-                  
                   const expired = isOverdue(a.due_date);
+
+                  // ✅ phân biệt conference invite row
+                  const isConferenceRow = a._kind === "conference_invite";
 
                   return (
                     <tr key={a.id} className={`hover:bg-slate-50 transition-colors ${isBlocked ? "bg-red-50/20" : ""}`}>
-                      <td className="px-6 py-4 text-sm font-mono font-bold text-slate-400">#{a.id}</td>
+                      <td className="px-6 py-4 text-sm font-mono font-bold text-slate-400">
+                        {isConferenceRow ? `#INV-${a._invite_id}` : `#${a.id}`}
+                      </td>
 
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
                           <span className="text-sm font-bold text-slate-900 line-clamp-1">
                             {a.paper_title || a.title || `Paper #${a.paper_id}`}
                           </span>
-                          <span className="text-xs text-slate-400 mt-1">Paper ID: {a.paper_id}</span>
+
+                          {/* giữ layout Paper ID như cũ */}
+                          <span className="text-xs text-slate-400 mt-1">
+                            Paper ID: {a.paper_id}
+                          </span>
+
                           {a._blockedByCoi && (
                             <span className="mt-1 text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded w-fit">
                               Bị chặn bởi COI
@@ -408,12 +484,15 @@ export default function MyAssignments() {
                           }`}
                         >
                           {a.due_date ? new Date(a.due_date).toLocaleDateString("vi-VN") : "—"}
-                          {expired && !isDone && !isBlocked && <span className="block text-[10px] text-rose-500">(Quá hạn)</span>}
+                          {expired && !isDone && !isBlocked && (
+                            <span className="block text-[10px] text-rose-500">(Quá hạn)</span>
+                          )}
                         </span>
                       </td>
 
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
+                          {/* ✅ INVITED */}
                           {isInvited &&
                             (expired ? (
                               <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded border border-rose-100 whitespace-nowrap">
@@ -421,32 +500,55 @@ export default function MyAssignments() {
                               </span>
                             ) : (
                               <>
-                                <button
-                                  onClick={() => handleAccept(a.id)}
-                                  className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
-                                  type="button"
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  onClick={() => handleDecline(a.id)}
-                                  className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
-                                  type="button"
-                                >
-                                  Decline
-                                </button>
-                                <button
-                                  onClick={() => handleDeclareCOI(a.paper_id)}
-                                  className="px-3 py-1.5 rounded border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition"
-                                  title="Khai báo Xung đột lợi ích"
-                                  type="button"
-                                >
-                                  COI
-                                </button>
+                                {/* ✅ nếu là conference invite -> accept/decline bằng notificationApi */}
+                                {isConferenceRow ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleAcceptInvite(a._invite_id)}
+                                      className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
+                                      type="button"
+                                    >
+                                      Accept
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeclineInvite(a._invite_id)}
+                                      className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                                      type="button"
+                                    >
+                                      Decline
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleAccept(a.id)}
+                                      className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm transition"
+                                      type="button"
+                                    >
+                                      Accept
+                                    </button>
+                                    <button
+                                      onClick={() => handleDecline(a.id)}
+                                      className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                                      type="button"
+                                    >
+                                      Decline
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeclareCOI(a.paper_id)}
+                                      className="px-3 py-1.5 rounded border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition"
+                                      title="Khai báo Xung đột lợi ích"
+                                      type="button"
+                                    >
+                                      COI
+                                    </button>
+                                  </>
+                                )}
                               </>
                             ))}
 
-                          {isBlocked && a._blockedByCoi && (
+                          {/* COI */}
+                          {isBlocked && a._blockedByCoi && !isConferenceRow && (
                             <button
                               onClick={() => handleResolveCoiAndAccept(a.paper_id, a.id)}
                               className="px-3 py-1.5 rounded bg-white border border-red-200 text-red-700 text-xs font-bold hover:bg-red-50"
@@ -456,7 +558,8 @@ export default function MyAssignments() {
                             </button>
                           )}
 
-                          {isDone && (
+                          {/* DONE */}
+                          {isDone && !isConferenceRow && (
                             <button
                               onClick={() => navigate(`/reviewer/assignments/${a.id}`)}
                               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-all shadow-sm"
@@ -467,17 +570,22 @@ export default function MyAssignments() {
                             </button>
                           )}
 
+                          {/* ACCEPTED */}
                           {isAccepted && (
-                            <button
-                              onClick={() => navigate(`/reviewer/review/${a.id}`)}
-                              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-bold hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md ${
-                                expired ? "bg-rose-600 hover:bg-rose-700" : "bg-primary hover:bg-primary/90"
-                              }`}
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-sm">rate_review</span>
-                              {expired ? "Chấm (Trễ hạn)" : "Bắt đầu chấm"}
-                            </button>
+                            isConferenceRow ? (
+                              <span className="text-xs font-bold text-slate-500">Đã phản hồi</span>
+                            ) : (
+                              <button
+                                onClick={() => navigate(`/reviewer/review/${a.id}`)}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-bold hover:shadow-lg hover:-translate-y-0.5 transition-all shadow-md ${
+                                  expired ? "bg-rose-600 hover:bg-rose-700" : "bg-primary hover:bg-primary/90"
+                                }`}
+                                type="button"
+                              >
+                                <span className="material-symbols-outlined text-sm">rate_review</span>
+                                {expired ? "Chấm (Trễ hạn)" : "Bắt đầu chấm"}
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
@@ -494,7 +602,7 @@ export default function MyAssignments() {
         </div>
       </div>
 
-      {/* ================== TABLE 2: INVITES (MỚI - BÊN DƯỚI) ================== */}
+      {/* ================== TABLE 2: INVITES (BẢNG DƯỚI - CHỈ ROLE INVITE) ================== */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="px-6 py-5 border-b border-slate-100">
           <h3 className="text-lg font-black text-slate-900">Thông báo lời mời phản biện</h3>
