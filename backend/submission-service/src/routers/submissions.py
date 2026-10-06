@@ -708,6 +708,18 @@ def get_track_submission_count(
 
 
 @router.get(
+    "/topic/{topic_id}/count",
+    summary="Đếm số lượng bài nộp liên kết với chủ đề (Dùng cho kiểm tra Safe Delete)",
+)
+def get_topic_submission_count(
+    topic_id: int,
+    db: Session = Depends(database.get_db),
+):
+    count = db.query(models.PaperTopic).filter(models.PaperTopic.topic_id == topic_id).count()
+    return {"topic_id": topic_id, "count": count}
+
+
+@router.get(
     "/conference/{conference_id}/camera-ready",
     response_model=List[schemas.PaperResponse],
     dependencies=[Depends(require_roles(["CHAIR", "ADMIN"]))],

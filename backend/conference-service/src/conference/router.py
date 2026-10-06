@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from src.config import settings
@@ -128,6 +128,23 @@ def create_conference(
     start_dt = datetime.combine(start_date, start_time).replace(microsecond=0)
     end_dt = datetime.combine(end_date, end_time).replace(microsecond=0)
 
+    # Chuẩn hóa tên và kiểm tra trùng lặp trong cùng năm tổ chức
+    clean_name = name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Tên hội nghị không được để trống.")
+
+    start_year_begin = datetime(start_dt.year, 1, 1, 0, 0, 0)
+    start_year_end = datetime(start_dt.year, 12, 31, 23, 59, 59)
+    existing = db.query(Conference).filter(
+        func.lower(Conference.name) == clean_name.lower(),
+        Conference.start_date.between(start_year_begin, start_year_end)
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hội nghị với tên '{clean_name}' đã tồn tại trong năm {start_dt.year}."
+        )
+
     # Validate thời gian hội nghị
     now = datetime.now()
     if start_dt < now - timedelta(minutes=5):
@@ -151,8 +168,8 @@ def create_conference(
     logo_path = save_image(logo, "conference_logos") if logo else None
 
     new_conference = Conference(
-        name=name,
-        description=description,
+        name=clean_name,
+        description=description.strip() if description else None,
         logo=logo_path,
         start_date=start_dt,
         end_date=end_dt,
@@ -241,8 +258,7 @@ def update_conference(
     if not conference:
         raise HTTPException(status_code=404, detail="Conference not found")
 
-    if name: conference.name = name
-    if description is not None: conference.description = description
+    if description is not None: conference.description = description.strip() if description else None
     if submission_deadline is not None: conference.submission_deadline = submission_deadline
     if review_deadline is not None: conference.review_deadline = review_deadline
     if notification_date is not None: conference.notification_date = notification_date
@@ -273,6 +289,25 @@ def update_conference(
             status_code=400,
             detail="Thời gian bắt đầu phải trước thời gian kết thúc hội nghị."
         )
+
+    if name is not None:
+        clean_name = name.strip()
+        if not clean_name:
+            raise HTTPException(status_code=400, detail="Tên hội nghị không được để trống.")
+        target_year = new_start_dt.year
+        start_year_begin = datetime(target_year, 1, 1, 0, 0, 0)
+        start_year_end = datetime(target_year, 12, 31, 23, 59, 59)
+        existing = db.query(Conference).filter(
+            Conference.id != conference_id,
+            func.lower(Conference.name) == clean_name.lower(),
+            Conference.start_date.between(start_year_begin, start_year_end)
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Hội nghị với tên '{clean_name}' đã tồn tại trong năm {target_year}."
+            )
+        conference.name = clean_name
 
     conference.start_date = new_start_dt
     conference.end_date = new_end_dt

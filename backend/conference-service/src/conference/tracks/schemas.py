@@ -25,6 +25,7 @@ class TrackResponse(BaseModel):
     conference_id: int
     chair_id: Optional[int] = None
     logo: Optional[str] = None
+    topics_count: Optional[int] = 0
     created_at: datetime
 
     class Config:

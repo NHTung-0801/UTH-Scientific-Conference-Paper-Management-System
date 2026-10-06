@@ -1,10 +1,12 @@
 import logging
 import os
 import shutil
+from datetime import datetime
 from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -46,11 +48,34 @@ def create_track(
     if not conference:
         raise HTTPException(status_code=404, detail="Conference not found")
 
+    # Kiểm tra vòng đời: Không cho phép tạo phân ban mới khi hội nghị đã kết thúc
+    now = datetime.now()
+    if conference.end_date and now > conference.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Hội nghị đã kết thúc. Không thể tạo phân ban mới."
+        )
+
+    # Chuẩn hóa tên và kiểm tra trùng lặp trong cùng hội nghị
+    clean_name = name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Tên phân ban không được để trống.")
+
+    existing = db.query(Track).filter(
+        Track.conference_id == conference_id,
+        func.lower(Track.name) == clean_name.lower()
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Phân ban với tên '{clean_name}' đã tồn tại trong hội nghị."
+        )
+
     logo_path = save_image(logo, "track_logos") if logo else None
 
     track = Track(
-        name=name,
-        description=description,
+        name=clean_name,
+        description=description.strip() if description else None,
         conference_id=conference_id,
         chair_id=chair_id,
         logo=logo_path
@@ -73,6 +98,7 @@ def create_track(
             "logo": track.logo,
             "conference_id": track.conference_id,
             "chair_id": track.chair_id,
+            "topics_count": track.topics_count,
         }
     }
 
@@ -123,9 +149,23 @@ def update_track(
     }
 
     if name is not None:
-        track.name = name
+        clean_name = name.strip()
+        if not clean_name:
+            raise HTTPException(status_code=400, detail="Tên phân ban không được để trống.")
+        existing = db.query(Track).filter(
+            Track.conference_id == track.conference_id,
+            Track.id != track_id,
+            func.lower(Track.name) == clean_name.lower()
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Phân ban với tên '{clean_name}' đã tồn tại trong hội nghị."
+            )
+        track.name = clean_name
+
     if description is not None:
-        track.description = description
+        track.description = description.strip() if description else None
     if chair_id is not None:
         track.chair_id = chair_id if chair_id != 0 else None
     if logo:
@@ -142,7 +182,8 @@ def update_track(
         "description": track.description,
         "conference_id": track.conference_id,
         "chair_id": track.chair_id,
-        "logo": track.logo
+        "logo": track.logo,
+        "topics_count": track.topics_count,
     }
 
     return {"message": "Track updated successfully", "before": before_update, "after": after_update}

@@ -29,7 +29,11 @@ class Track(Base):
 )
 
     topics = relationship(
-    "Topic",
-    back_populates="track",
-    cascade="all, delete"
-)
+        "Topic",
+        back_populates="track",
+        cascade="all, delete"
+    )
+
+    @property
+    def topics_count(self) -> int:
+        return len(self.topics) if self.topics else 0
