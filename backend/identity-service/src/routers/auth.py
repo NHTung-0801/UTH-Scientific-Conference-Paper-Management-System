@@ -1,6 +1,5 @@
 # backend/identity-service/src/routers/auth.py
 import os
-import time  # [FIX] Import thư viện time
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -43,6 +42,14 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, data.email)
 
     if not user or not verify_password(data.password, user.password_hash):
+        # [AUDIT LOG] Ghi vết cảnh báo đăng nhập thất bại
+        crud.log_activity(
+            db,
+            user_id=user.id if user else None,
+            action="Đăng nhập thất bại (Sai email/mật khẩu)",
+            target="Portal Auth",
+            status="FAILED"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -76,19 +83,15 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
     }
 
 
-# --- [MỚI] 2.1 API ĐĂNG NHẬP BẰNG FIREBASE ---
 @router.post("/login/firebase", response_model=schemas.TokenResponse)
 def login_with_firebase(
     request: schemas.FirebaseLoginRequest, 
     db: Session = Depends(get_db)
 ):
-    # [FIX QUAN TRỌNG] Ngủ 3 giây để đồng hồ Docker kịp đuổi theo đồng hồ Google
-    # Khắc phục lỗi "Token used too early"
-    time.sleep(3)
-
     try:
-        # 1. Xác thực Token với Firebase
-        decoded_token = firebase_auth.verify_id_token(request.token)
+        # [FIX ARCHITECT] Sử dụng clock_skew_seconds=10 để xử lý lệch giờ (clock skew)
+        # thay vì gọi time.sleep(3) làm khóa threadpool của worker
+        decoded_token = firebase_auth.verify_id_token(request.token, clock_skew_seconds=10)
         email = decoded_token.get('email')
         name = decoded_token.get('name', 'Firebase User')
         
@@ -269,12 +272,28 @@ def reset_password(
     request: schemas.ResetPasswordRequest, 
     db: Session = Depends(get_db)
 ):
-    success = crud.reset_password(db, request.token, request.new_password)
-    if not success:
+    user = crud.verify_reset_token(db, request.token)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Invalid or expired reset token"
         )
+    
+    user_id = user.id
+    # 1. Cập nhật mật khẩu mới và hủy OTP
+    crud.reset_password(db, request.token, request.new_password)
+
+    # 2. [SECURITY] Thu hồi toàn bộ Refresh Token của các thiết bị khác
+    crud.revoke_all_refresh_tokens_of_user(db, user_id=user_id)
+
+    # 3. [AUDIT LOG] Ghi nhận hành vi
+    crud.log_activity(
+        db,
+        user_id=user_id,
+        action="Đặt lại mật khẩu qua OTP",
+        target="Account Security",
+        status="SUCCESS"
+    )
     
     return {"message": "Mật khẩu đã thay đổi thành công!"}
 
@@ -320,4 +339,17 @@ def change_password(
     if body.old_password == body.new_password:
         raise HTTPException(status_code=400, detail="Mật khẩu mới không được trùng với mật khẩu cũ")
     crud.update_password(db, user.id, body.new_password)
+
+    # [SECURITY] Thu hồi toàn bộ Refresh Token của các thiết bị khác khi đổi mật khẩu
+    crud.revoke_all_refresh_tokens_of_user(db, user_id=user.id)
+
+    # [AUDIT LOG] Ghi nhận hành vi đổi mật khẩu
+    crud.log_activity(
+        db,
+        user_id=user.id,
+        action="Đổi mật khẩu tài khoản",
+        target="Account Security",
+        status="SUCCESS"
+    )
+
     return {"message": "Đổi mật khẩu thành công."}

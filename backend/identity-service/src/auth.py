@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
@@ -66,6 +67,7 @@ def create_access_token(
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     payload: Dict[str, Any] = {
+        "jti": uuid.uuid4().hex,
         "sub": subject,
         "user_id": user_id,
         "roles": _normalize_roles(roles),
@@ -100,6 +102,7 @@ def create_refresh_token(
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
     payload: Dict[str, Any] = {
+        "jti": uuid.uuid4().hex,
         "sub": subject,
         "user_id": user_id,
         "iat": int(now.timestamp()),

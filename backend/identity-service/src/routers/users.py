@@ -7,40 +7,7 @@ from pydantic import BaseModel
 from src.database import get_db
 from src import models, schemas, crud
 
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
-from src.auth import SECRET_KEY, ALGORITHM
-
-# tokenUrl chỉ dùng cho Swagger "Authorize" UI
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
-# --- DEPENDENCIES ---
-
-def decode_token(token: str):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-
-def require_user(payload=Depends(lambda token=Depends(oauth2_scheme): decode_token(token))):
-    """Yêu cầu người dùng đã đăng nhập (có access token hợp lệ)"""
-    return payload
-
-
-def require_admin(payload=Depends(require_user)):
-    """Yêu cầu người dùng có quyền ADMIN"""
-    roles = payload.get("roles") or []
-    if isinstance(roles, str):
-        roles = [roles]
-    # Chuẩn hóa role về chữ hoa để so sánh
-    roles = [str(r).upper() for r in roles]
-    
-    if "ADMIN" not in roles:
-        raise HTTPException(status_code=403, detail="Admin only")
-    return payload
-
+from src.dependencies import require_user, require_admin, require_admin_or_chair
 
 # --- ROUTER CONFIG ---
 
@@ -75,15 +42,6 @@ def get_me(
 
     return user
 
-def require_admin_or_chair(payload=Depends(require_user)):
-    roles = payload.get("roles") or []
-    if isinstance(roles, str):
-        roles = [roles]
-    roles = [str(r).upper() for r in roles]
-
-    if "ADMIN" not in roles and "CHAIR" not in roles:
-        raise HTTPException(status_code=403, detail="Admin/Chair only")
-    return payload
 
 
 @router.put(
