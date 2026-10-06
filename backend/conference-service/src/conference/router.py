@@ -1,61 +1,40 @@
+import logging
 import os
 import shutil
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from uuid import uuid4
-from datetime import time, date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.database import get_db
+from src.config import settings
 from src.conference.models import Conference
-from pathlib import Path
-from datetime import time, date, datetime
-from uuid import uuid4
-
-from src.conference.schemas import ConferenceDeleteResult
-from sqlalchemy import text
-from datetime import time , date, datetime
-
 from src.conference.schemas import (
+    CameraReadyOpenIn,
     ConferenceCreate,
-    ConferenceUpdate,
+    ConferenceDeleteResult,
+    ConferencePhaseOut,
     ConferenceResponse,
+    ConferenceUpdate,
     ConferenceUpdateResult,
-    CameraReadyOpenIn
 )
-from fastapi import UploadFile, File, Form
-
-import os, shutil
-
+from src.database import get_db
 from src.security.deps import require_roles
+from src.utils.file_handler import delete_image, save_image
+
+logger = logging.getLogger(__name__)
 
 # =========================
 # CONFIG
 # =========================
 router = APIRouter(prefix="/api/conferences", tags=["Conferences"])
 
-BASE_DIR = Path(__file__).resolve().parents[1]  # trỏ về thư mục src
-STATIC_DIR = BASE_DIR / "static"
-LOGO_DIR = STATIC_DIR / "conference_logos"
-LOGO_DIR.mkdir(parents=True, exist_ok=True)
-
 # =========================
 # HELPER FUNCTIONS
 # =========================
-def save_logo(file: UploadFile) -> str:
-    if not file:
-        return None
-
-    ext = Path(file.filename).suffix or ".jpg"
-    filename = f"{uuid4().hex}{ext}"
-    path = LOGO_DIR / filename
-
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    file.file.close()  # ✅ đóng stream
-
-    return f"/static/conference_logos/{filename}"
 
 
 
@@ -131,10 +110,21 @@ def create_conference(
     start_dt = datetime.combine(start_date, start_time).replace(microsecond=0)
     end_dt = datetime.combine(end_date, end_time).replace(microsecond=0)
 
-    if start_dt >= end_dt:
-        raise HTTPException(status_code=400, detail="Start time must be before end time")
+    # Validate thời gian hội nghị
+    now = datetime.now()
+    if start_dt < now - timedelta(minutes=5):
+        raise HTTPException(
+            status_code=400,
+            detail="Thời gian bắt đầu hội nghị không được ở trong quá khứ."
+        )
 
-    logo_path = save_logo(logo) if logo else None
+    if start_dt >= end_dt:
+        raise HTTPException(
+            status_code=400,
+            detail="Thời gian bắt đầu phải trước thời gian kết thúc hội nghị."
+        )
+
+    logo_path = save_image(logo, "conference_logos") if logo else None
 
     new_conference = Conference(
         name=name,
@@ -219,13 +209,18 @@ def update_conference(
     )
 
     if new_start_dt >= new_end_dt:
-        raise HTTPException(status_code=400, detail="Start time must be before end time")
+        raise HTTPException(
+            status_code=400,
+            detail="Thời gian bắt đầu phải trước thời gian kết thúc hội nghị."
+        )
 
     conference.start_date = new_start_dt
     conference.end_date = new_end_dt
 
     if logo:
-        conference.logo = save_logo(logo)
+        # Xóa logo cũ trên đĩa trước khi lưu logo mới
+        delete_image(conference.logo)
+        conference.logo = save_image(logo, "conference_logos")
 
     db.commit()
     db.refresh(conference)
@@ -244,6 +239,32 @@ def delete_conference(
     conference = db.query(Conference).filter(Conference.id == conference_id).first()
     if not conference:
         raise HTTPException(status_code=404, detail="Conference not found")
+
+    # Safe Delete: Kiểm tra xem đã có bài báo nào nộp vào hội nghị này chưa
+    sub_service_url = settings.SUBMISSION_SERVICE_URL.rstrip("/")
+    headers = {}
+    if getattr(settings, "INTERNAL_KEY", None):
+        headers["X-Internal-Key"] = settings.INTERNAL_KEY
+
+    try:
+        resp = httpx.get(
+            f"{sub_service_url}/submissions/conference/{conference_id}/count",
+            headers=headers,
+            timeout=5.0
+        )
+        if resp.status_code == 200:
+            paper_count = resp.json().get("count", 0)
+            if paper_count > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Không thể xóa Hội nghị đã có bài báo nộp (tồn tại {paper_count} bài nộp)."
+                )
+    except httpx.RequestError as exc:
+        logger.warning(f"Không thể kết nối Submission Service để kiểm tra bài báo: {exc}")
+
+    # Xóa file logo vật lý trên đĩa
+    if conference.logo:
+        delete_image(conference.logo)
 
     db.delete(conference)
     db.commit()
@@ -284,6 +305,19 @@ def open_camera_ready(
     conf = db.query(Conference).filter(Conference.id == conference_id).first()
     if not conf:
         raise HTTPException(status_code=404, detail="Conference not found")
+
+    if body.deadline:
+        now = datetime.now(body.deadline.tzinfo) if body.deadline.tzinfo else datetime.now()
+        if body.deadline < now:
+            raise HTTPException(
+                status_code=400,
+                detail="Hạn chót Camera-Ready không được ở trong quá khứ."
+            )
+        if conf.start_date and body.deadline > conf.start_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Hạn chót Camera-Ready phải trước hoặc bằng ngày bắt đầu hội nghị."
+            )
 
     conf.camera_ready_open = True
     conf.camera_ready_deadline = body.deadline

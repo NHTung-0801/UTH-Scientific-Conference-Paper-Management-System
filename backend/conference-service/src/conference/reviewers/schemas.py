@@ -1,0 +1,54 @@
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+from pydantic import BaseModel, EmailStr, Field
+
+class ReviewerStatusEnum(str, Enum):
+    INVITED = "INVITED"
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+    REVOKED = "REVOKED"
+
+class ReviewerInviteRequest(BaseModel):
+    reviewer_email: EmailStr
+    reviewer_name: Optional[str] = None
+    track_id: Optional[int] = None
+    max_papers: int = Field(default=3, ge=1, le=20, description="Hạn mức số bài báo tối đa nhận phản biện")
+    description: Optional[str] = None
+
+class ReviewerUpdateRequest(BaseModel):
+    track_id: Optional[int] = None
+    max_papers: Optional[int] = Field(default=None, ge=1, le=20)
+    status: Optional[ReviewerStatusEnum] = None
+
+class ReviewerResponseOut(BaseModel):
+    id: int
+    conference_id: int
+    user_id: Optional[int] = None
+    reviewer_email: str
+    reviewer_name: Optional[str] = None
+    track_id: Optional[int] = None
+    status: ReviewerStatusEnum
+    max_papers: int
+    invited_at: Optional[datetime] = None
+    responded_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class ReviewerActiveOut(BaseModel):
+    id: int
+    conference_id: int
+    user_id: Optional[int] = None
+    reviewer_name: Optional[str] = None
+    reviewer_email: str
+    track_id: Optional[int] = None
+    max_papers: int
+
+    class Config:
+        from_attributes = True
+
+class ReviewerResponseAction(BaseModel):
+    reviewer_email: EmailStr
+    action: str = Field(..., pattern="^(accept|decline)$")
+    user_id: Optional[int] = None

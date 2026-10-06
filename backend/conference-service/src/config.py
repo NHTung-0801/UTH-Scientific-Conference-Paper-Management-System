@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Conference Service"
     SECRET_KEY: str = "secret_key_conference_service"
+    INTERNAL_KEY: str = os.getenv("INTERNAL_KEY", "")
     
     def model_post_init(self, __context):
         if self.DATABASE_URL is None:

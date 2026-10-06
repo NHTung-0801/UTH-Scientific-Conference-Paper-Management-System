@@ -17,7 +17,13 @@ class Conference(Base):
     camera_ready_deadline = Column(DateTime, nullable=True)
 
     tracks = relationship(
-    "Track",
-    back_populates="conference",
-    cascade="all, delete"
-)
+        "Track",
+        back_populates="conference",
+        cascade="all, delete"
+    )
+
+    reviewers = relationship(
+        "ConferenceReviewer",
+        back_populates="conference",
+        cascade="all, delete-orphan"
+    )

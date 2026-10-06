@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from src.conference.router import router as conference_router
 from src.conference.tracks.router import router as track_router
 from src.conference.topics.router import router as topic_router
-from fastapi.staticfiles import StaticFiles
+from src.conference.reviewers.router import router as reviewer_router
 
 BASE_DIR = Path(__file__).resolve().parent  # .../src
 STATIC_DIR = BASE_DIR / "static"
@@ -40,3 +40,4 @@ def root():
 app.include_router(conference_router)
 app.include_router(track_router)
 app.include_router(topic_router)
+app.include_router(reviewer_router)

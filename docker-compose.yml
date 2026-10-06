@@ -51,7 +51,6 @@ services:
       timeout: 5s
       retries: 15
 
-  # GIỮ LẠI RABBITMQ ĐỂ GỬI MAIL
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: confms_rabbitmq

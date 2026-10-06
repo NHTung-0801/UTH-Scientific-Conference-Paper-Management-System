@@ -16,11 +16,9 @@ def get_current_payload(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
     x_internal_key: Optional[str] = Header(default=None, alias="x-internal-key"),
 ) -> Dict[str, Any]:
-    # ✅ service-to-service
     if INTERNAL_KEY and x_internal_key and x_internal_key == INTERNAL_KEY:
         return {"user_id": 0, "roles": ["INTERNAL", "ADMIN"]}
 
-    # ✅ normal user
     if creds is None or not creds.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
 
@@ -36,7 +34,6 @@ def require_roles(allowed_roles: List[str]):
     def _guard(payload: Dict[str, Any] = Depends(get_current_payload)) -> Dict[str, Any]:
         roles = set(payload.get("roles") or [])
 
-        # ✅ internal bypass
         if "INTERNAL" in roles:
             return payload
 

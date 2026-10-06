@@ -19,8 +19,6 @@ class Track(Base):
         nullable=False
     )
 
-    description = Column(String(500), nullable=True)
-
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     conference = relationship(

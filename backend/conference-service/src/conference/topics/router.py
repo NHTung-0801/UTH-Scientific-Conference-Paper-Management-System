@@ -7,9 +7,8 @@ from src.conference.topics.schemas import (
     TopicCreate, TopicUpdate, TopicResponse
 )
 from src.conference.models import Conference
-from src.conference.tracks.models import Track
-from fastapi import UploadFile, File, Form
 from src.security.deps import require_roles
+from src.utils.file_handler import save_image, delete_image
 import os
 import shutil
 
@@ -61,12 +60,6 @@ def create_topic(
     now = datetime.now()
 
     if now > conference.end_date:
-            raise HTTPException(
-                status_code=400,
-                detail="Conference has ended. Cannot create topic."
-            )
-
-    if now > conference.end_date:
         raise HTTPException(
             status_code=400,
             detail="Conference has ended. Cannot create topic."
@@ -75,15 +68,7 @@ def create_topic(
     # ========================
     # HANDLE PICTURE
     # ========================
-    picture_path = None
-    if picture:
-        os.makedirs("src/static/topic_pictures", exist_ok=True)
-        file_path = f"src/static/topic_pictures/{picture.filename}"
-
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(picture.file, buffer)
-
-        picture_path = f"topic_pictures/{picture.filename}"
+    picture_path = save_image(picture, "topic_pictures") if picture else None
 
     # ========================
     # CREATE TOPIC
@@ -213,13 +198,9 @@ def update_topic(
 
     # update picture
     if picture:
-        os.makedirs("src/static/topic_pictures", exist_ok=True)
-        file_path = f"src/static/topic_pictures/{picture.filename}"
-
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(picture.file, buffer)
-
-        topic.picture = f"topic_pictures/{picture.filename}"
+        # Xóa ảnh cũ trước khi lưu ảnh mới
+        delete_image(topic.picture)
+        topic.picture = save_image(picture, "topic_pictures")
 
     db.commit()
     db.refresh(topic)
@@ -264,6 +245,10 @@ def delete_topic(
         "conference_id": track.conference_id if track else None,
         "picture": topic.picture
     }
+
+    # Xóa file ảnh vật lý trên đĩa
+    if topic.picture:
+        delete_image(topic.picture)
 
     db.delete(topic)
     db.commit()

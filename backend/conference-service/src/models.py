@@ -1,11 +1,8 @@
-from sqlalchemy import Column, Integer, String, Text
-from src.database import Base
+# src/models.py
+# Re-export để thống nhất các entity và tránh duplicate SQLAlchemy Base metadata
+from src.conference.models import Conference
+from src.conference.tracks.models import Track
+from src.conference.topics.models import Topic
+from src.conference.reviewers.models import ConferenceReviewer, ReviewerStatus
 
-class Conference(Base):
-    __tablename__ = "conferences"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    logo = Column(String(255), nullable=True)
-    description = Column(Text, nullable=True)
-    created_by = Column(Integer, nullable=False)
+__all__ = ["Conference", "Track", "Topic", "ConferenceReviewer", "ReviewerStatus"]

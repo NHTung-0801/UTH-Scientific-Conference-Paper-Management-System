@@ -680,6 +680,32 @@ def get_conference_phase_or_502(conference_id: int) -> dict:
         raise HTTPException(status_code=502, detail=f"Cannot read conference phase: {r.text}")
     return r.json()
 
+# ============================================================
+# SAFE DELETE CHECKS (INTERNAL / SERVICE-TO-SERVICE)
+# ============================================================
+@router.get(
+    "/conference/{conference_id}/count",
+    summary="Đếm số lượng bài nộp của hội nghị (Dùng cho kiểm tra Safe Delete)",
+)
+def get_conference_submission_count(
+    conference_id: int,
+    db: Session = Depends(database.get_db),
+):
+    count = db.query(models.Paper).filter(models.Paper.conference_id == conference_id).count()
+    return {"conference_id": conference_id, "count": count}
+
+
+@router.get(
+    "/track/{track_id}/count",
+    summary="Đếm số lượng bài nộp của phân ban (Dùng cho kiểm tra Safe Delete)",
+)
+def get_track_submission_count(
+    track_id: int,
+    db: Session = Depends(database.get_db),
+):
+    count = db.query(models.Paper).filter(models.Paper.track_id == track_id).count()
+    return {"track_id": track_id, "count": count}
+
 
 @router.get(
     "/conference/{conference_id}/camera-ready",

@@ -1,33 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
-from uuid import uuid4
+import logging
 import os
 import shutil
+from uuid import uuid4
 
-from src.database import get_db
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from src.config import settings
+from src.conference.models import Conference
 from src.conference.tracks.models import Track
 from src.conference.tracks.schemas import TrackResponse
-from src.conference.models import Conference
+from src.database import get_db
 from src.security.deps import require_roles
+from src.utils.file_handler import delete_image, save_image
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/tracks", tags=["Tracks"])
-
-# ====== STATIC PATH (thống nhất với app.mount("/static", StaticFiles(directory="static")) ) ======
-STATIC_DIR = "static"
-TRACK_LOGO_DIR = os.path.join(STATIC_DIR, "track_logos")
-os.makedirs(TRACK_LOGO_DIR, exist_ok=True)
-
-def save_track_logo(file: UploadFile) -> str:
-    ext = (file.filename.split(".")[-1] if file.filename and "." in file.filename else "png")
-    filename = f"{uuid4().hex}.{ext}"
-    file_path = os.path.join(TRACK_LOGO_DIR, filename)
-
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Lưu DB theo chuẩn public URL
-    return f"/static/track_logos/{filename}"
 
 
 # ========================
@@ -54,7 +45,7 @@ def create_track(
     if not conference:
         raise HTTPException(status_code=404, detail="Conference not found")
 
-    logo_path = save_track_logo(logo) if logo else None
+    logo_path = save_image(logo, "track_logos") if logo else None
 
     track = Track(
         name=name,
@@ -131,7 +122,9 @@ def update_track(
     if description is not None:
         track.description = description
     if logo:
-        track.logo = save_track_logo(logo)  # ✅ thống nhất /static/track_logos/...
+        # Xóa logo cũ trên đĩa trước khi lưu logo mới
+        delete_image(track.logo)
+        track.logo = save_image(logo, "track_logos")
 
     db.commit()
     db.refresh(track)
@@ -160,6 +153,28 @@ def delete_track(
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
 
+    # Safe Delete: Kiểm tra xem đã có bài báo nào nộp vào phân ban này chưa
+    sub_service_url = settings.SUBMISSION_SERVICE_URL.rstrip("/")
+    headers = {}
+    if getattr(settings, "INTERNAL_KEY", None):
+        headers["X-Internal-Key"] = settings.INTERNAL_KEY
+
+    try:
+        resp = httpx.get(
+            f"{sub_service_url}/submissions/track/{track_id}/count",
+            headers=headers,
+            timeout=5.0
+        )
+        if resp.status_code == 200:
+            paper_count = resp.json().get("count", 0)
+            if paper_count > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Không thể xóa Phân ban đã có bài báo nộp (tồn tại {paper_count} bài nộp)."
+                )
+    except httpx.RequestError as exc:
+        logger.warning(f"Không thể kết nối Submission Service để kiểm tra bài báo: {exc}")
+
     deleted_track = {
         "id": track.id,
         "name": track.name,
@@ -167,6 +182,10 @@ def delete_track(
         "conference_id": track.conference_id,
         "logo": track.logo
     }
+
+    # Xóa file logo vật lý trên đĩa
+    if track.logo:
+        delete_image(track.logo)
 
     db.delete(track)
     db.commit()
