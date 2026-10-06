@@ -52,3 +52,22 @@ class ReviewerResponseAction(BaseModel):
     reviewer_email: EmailStr
     action: str = Field(..., pattern="^(accept|decline)$")
     user_id: Optional[int] = None
+
+class ReviewerMessageCreate(BaseModel):
+    subject: str = Field(..., min_length=1, max_length=255, description="Tiêu đề trao đổi")
+    content: str = Field(..., min_length=1, description="Nội dung tin nhắn")
+
+class ReviewerMessageOut(BaseModel):
+    id: int
+    conference_id: int
+    reviewer_pool_id: int
+    sender_id: int
+    sender_role: str
+    sender_name: Optional[str] = None
+    subject: str
+    content: str
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -9,17 +9,19 @@ from sqlalchemy.orm import Session
 from src.config import settings
 from src.conference.models import Conference
 from src.conference.tracks.models import Track
-from src.conference.reviewers.models import ConferenceReviewer, ReviewerStatus
+from src.conference.reviewers.models import ConferenceReviewer, ReviewerMessage, ReviewerStatus
 from src.conference.reviewers.schemas import (
     ReviewerActiveOut,
     ReviewerInviteRequest,
+    ReviewerMessageCreate,
+    ReviewerMessageOut,
     ReviewerResponseAction,
     ReviewerResponseOut,
     ReviewerStatusEnum,
     ReviewerUpdateRequest,
 )
 from src.database import get_db
-from src.security.deps import require_roles
+from src.security.deps import get_current_payload, require_roles
 
 logger = logging.getLogger(__name__)
 
@@ -297,3 +299,171 @@ def delete_conference_reviewer(
     db.delete(reviewer)
     db.commit()
     return {"message": "Reviewer removed from conference pool successfully", "id": reviewer_id}
+
+
+# ============================================================
+# 7. GET ALL CONFERENCE REVIEWER MESSAGES (Cho Chair xem tổng thể)
+# ============================================================
+@router.get(
+    "/messages",
+    response_model=List[ReviewerMessageOut],
+    summary="Xem tất cả tin nhắn trao đổi từ Ban Phản biện trong hội nghị (Chair)",
+)
+def list_conference_reviewer_messages(
+    conference_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
+):
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    messages = db.query(ReviewerMessage).filter(
+        ReviewerMessage.conference_id == conference_id
+    ).order_by(ReviewerMessage.created_at.desc()).all()
+
+    return messages
+
+
+# ============================================================
+# 8. GET THREAD MESSAGES (Xem luồng tin nhắn giữa Chair và 1 Reviewer)
+# ============================================================
+@router.get(
+    "/{reviewer_id}/messages",
+    response_model=List[ReviewerMessageOut],
+    summary="Xem luồng tin nhắn trao đổi giữa Chair và một Reviewer",
+)
+def get_thread_messages(
+    conference_id: int,
+    reviewer_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_roles("ADMIN", "CHAIR", "REVIEWER")),
+):
+    reviewer = db.query(ConferenceReviewer).filter(
+        ConferenceReviewer.id == reviewer_id,
+        ConferenceReviewer.conference_id == conference_id
+    ).first()
+    if not reviewer:
+        raise HTTPException(status_code=404, detail="Reviewer not found in this conference")
+
+    roles = {str(r).upper() for r in (payload.get("roles") or [])}
+    user_id = payload.get("user_id")
+
+    if "ADMIN" not in roles and "CHAIR" not in roles:
+        if reviewer.user_id and reviewer.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Không có quyền xem tin nhắn của Reviewer khác")
+
+    messages = db.query(ReviewerMessage).filter(
+        ReviewerMessage.conference_id == conference_id,
+        ReviewerMessage.reviewer_pool_id == reviewer_id
+    ).order_by(ReviewerMessage.created_at.asc()).all()
+
+    return messages
+
+
+# ============================================================
+# 9. SEND MESSAGE IN THREAD (Gửi tin nhắn trao đổi)
+# ============================================================
+@router.post(
+    "/{reviewer_id}/messages",
+    response_model=ReviewerMessageOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Gửi tin nhắn trao đổi giữa Chair và Reviewer",
+)
+def send_thread_message(
+    conference_id: int,
+    reviewer_id: int,
+    body: ReviewerMessageCreate,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_roles("ADMIN", "CHAIR", "REVIEWER")),
+):
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    reviewer = db.query(ConferenceReviewer).filter(
+        ConferenceReviewer.id == reviewer_id,
+        ConferenceReviewer.conference_id == conference_id
+    ).first()
+    if not reviewer:
+        raise HTTPException(status_code=404, detail="Reviewer not found in this conference")
+
+    roles = {str(r).upper() for r in (payload.get("roles") or [])}
+    user_id = payload.get("user_id") or 0
+
+    is_chair = "ADMIN" in roles or "CHAIR" in roles
+    if not is_chair:
+        if reviewer.user_id and reviewer.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Không có quyền gửi tin nhắn thay cho Reviewer khác")
+        sender_role = "REVIEWER"
+        sender_name = reviewer.reviewer_name or "Reviewer"
+        receiver_id = conf.created_by
+        receiver_email = None
+    else:
+        sender_role = "CHAIR"
+        sender_name = "Chủ tọa (Chair)"
+        receiver_id = reviewer.user_id or 0
+        receiver_email = reviewer.reviewer_email
+
+    msg = ReviewerMessage(
+        conference_id=conference_id,
+        reviewer_pool_id=reviewer_id,
+        sender_id=user_id,
+        sender_role=sender_role,
+        sender_name=sender_name,
+        subject=body.subject,
+        content=body.content,
+        is_read=False,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+
+    # Gửi thông báo chuông sang Notification Service
+    try:
+        noti_url = settings.NOTIFICATION_SERVICE_URL.rstrip("/")
+        base_noti = noti_url if not noti_url.endswith("/api/notifications") else noti_url.rsplit("/api/notifications", 1)[0]
+        endpoint = f"{base_noti}/api/notifications"
+        headers = {}
+        if getattr(settings, "INTERNAL_KEY", None):
+            headers["X-Internal-Key"] = settings.INTERNAL_KEY
+
+        noti_payload = {
+            "receiver_id": receiver_id,
+            "receiver_email": receiver_email,
+            "subject": f"[{conf.name}] {body.subject}",
+            "body": f"Tin nhắn mới từ {sender_name}: {body.content[:100]}...",
+            "type": "MESSAGE"
+        }
+        httpx.post(endpoint, json=noti_payload, headers=headers, timeout=5.0)
+    except Exception as exc:
+        logger.warning(f"Không thể dispatch thông báo tin nhắn sang Notification Service: {exc}")
+
+    return msg
+
+
+# ============================================================
+# 10. MARK MESSAGE AS READ (Đánh dấu đã đọc)
+# ============================================================
+@router.patch(
+    "/messages/{message_id}/read",
+    response_model=ReviewerMessageOut,
+    summary="Đánh dấu tin nhắn đã đọc",
+)
+def mark_message_as_read(
+    conference_id: int,
+    message_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_roles("ADMIN", "CHAIR", "REVIEWER")),
+):
+    msg = db.query(ReviewerMessage).filter(
+        ReviewerMessage.id == message_id,
+        ReviewerMessage.conference_id == conference_id
+    ).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    msg.is_read = True
+    db.commit()
+    db.refresh(msg)
+    return msg

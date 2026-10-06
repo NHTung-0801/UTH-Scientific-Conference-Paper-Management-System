@@ -8,7 +8,20 @@ class ConferenceCreate(BaseModel):
     logo: Optional[str] = None
     start_date: datetime
     end_date: datetime
+
+    # Important Dates (Mốc thời gian vòng đời)
+    submission_deadline: Optional[datetime] = None
+    review_deadline: Optional[datetime] = None
+    notification_date: Optional[datetime] = None
+    rebuttal_deadline: Optional[datetime] = None
     camera_ready_deadline: Optional[datetime] = None
+    is_submission_open: bool = True
+
+    # Review Policies & Guidelines
+    blind_mode: str = "DOUBLE_BLIND"
+    min_reviews_per_paper: int = 2
+    max_paper_pages: int = 8
+    guidelines: Optional[str] = None
 
     @field_validator("start_date")
     @classmethod
@@ -22,9 +35,28 @@ class ConferenceCreate(BaseModel):
     def validate_dates_ordering(self) -> "ConferenceCreate":
         if self.end_date <= self.start_date:
             raise ValueError("Thời gian kết thúc phải diễn ra sau thời gian bắt đầu hội nghị.")
+
+        # Logic: Hạn nộp bài phải trước ngày khai mạc
+        if self.submission_deadline and self.submission_deadline > self.start_date:
+            raise ValueError("Hạn nộp bài (submission_deadline) phải trước hoặc bằng ngày bắt đầu hội nghị.")
+
+        # Logic: Hạn phản biện phải sau hạn nộp bài
+        if self.submission_deadline and self.review_deadline:
+            if self.review_deadline < self.submission_deadline:
+                raise ValueError("Hạn phản biện (review_deadline) phải sau hạn nộp bài (submission_deadline).")
+
+        # Logic: Ngày thông báo kết quả phải sau hạn phản biện
+        if self.review_deadline and self.notification_date:
+            if self.notification_date < self.review_deadline:
+                raise ValueError("Ngày công bố kết quả (notification_date) phải sau hạn phản biện (review_deadline).")
+
+        # Logic: Hạn camera-ready phải trước hoặc bằng ngày bắt đầu hội nghị
         if self.camera_ready_deadline:
             if self.camera_ready_deadline > self.start_date:
                 raise ValueError("Hạn chót nộp Camera-Ready phải trước hoặc bằng thời gian bắt đầu hội nghị.")
+            if self.notification_date and self.camera_ready_deadline < self.notification_date:
+                raise ValueError("Hạn nộp Camera-Ready phải sau ngày công bố kết quả (notification_date).")
+
         return self
 
 
@@ -34,7 +66,19 @@ class ConferenceUpdate(BaseModel):
     logo: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+
+    submission_deadline: Optional[datetime] = None
+    review_deadline: Optional[datetime] = None
+    notification_date: Optional[datetime] = None
+    rebuttal_deadline: Optional[datetime] = None
     camera_ready_deadline: Optional[datetime] = None
+    is_submission_open: Optional[bool] = None
+
+    # Review Policies
+    blind_mode: Optional[str] = None
+    min_reviews_per_paper: Optional[int] = None
+    max_paper_pages: Optional[int] = None
+    guidelines: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_update_dates(self) -> "ConferenceUpdate":
@@ -44,6 +88,9 @@ class ConferenceUpdate(BaseModel):
         if self.camera_ready_deadline and self.start_date:
             if self.camera_ready_deadline > self.start_date:
                 raise ValueError("Hạn chót nộp Camera-Ready phải trước hoặc bằng thời gian bắt đầu hội nghị.")
+        if self.submission_deadline and self.start_date:
+            if self.submission_deadline > self.start_date:
+                raise ValueError("Hạn nộp bài phải trước hoặc bằng thời gian bắt đầu hội nghị.")
         return self
 
 
@@ -58,6 +105,19 @@ class ConferenceResponse(BaseModel):
 
     camera_ready_open: bool = False
     camera_ready_deadline: Optional[datetime] = None
+
+    # Important Dates
+    submission_deadline: Optional[datetime] = None
+    review_deadline: Optional[datetime] = None
+    notification_date: Optional[datetime] = None
+    rebuttal_deadline: Optional[datetime] = None
+    is_submission_open: bool = True
+
+    # Policies & Guidelines
+    blind_mode: str = "DOUBLE_BLIND"
+    min_reviews_per_paper: int = 2
+    max_paper_pages: int = 8
+    guidelines: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -77,6 +137,8 @@ class ConferencePhaseOut(BaseModel):
     conference_id: int
     camera_ready_open: bool
     camera_ready_deadline: Optional[datetime] = None
+    submission_deadline: Optional[datetime] = None
+    is_submission_open: bool = True
 
 
 class CameraReadyOpenIn(BaseModel):
@@ -90,3 +152,14 @@ class CameraReadyOpenIn(BaseModel):
             if v < now:
                 raise ValueError("Hạn chót Camera-Ready không được ở trong quá khứ.")
         return v
+
+
+class SubmissionWindowToggle(BaseModel):
+    is_open: bool
+
+
+class ConferencePolicyUpdate(BaseModel):
+    blind_mode: Optional[str] = None
+    min_reviews_per_paper: Optional[int] = None
+    max_paper_pages: Optional[int] = None
+    guidelines: Optional[str] = None

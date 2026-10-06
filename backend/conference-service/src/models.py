@@ -3,6 +3,6 @@
 from src.conference.models import Conference
 from src.conference.tracks.models import Track
 from src.conference.topics.models import Topic
-from src.conference.reviewers.models import ConferenceReviewer, ReviewerStatus
+from src.conference.reviewers.models import ConferenceReviewer, ReviewerStatus, ReviewerMessage
 
-__all__ = ["Conference", "Track", "Topic", "ConferenceReviewer", "ReviewerStatus"]
+__all__ = ["Conference", "Track", "Topic", "ConferenceReviewer", "ReviewerStatus", "ReviewerMessage"]

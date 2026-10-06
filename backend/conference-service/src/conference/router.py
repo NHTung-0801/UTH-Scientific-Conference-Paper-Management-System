@@ -17,9 +17,11 @@ from src.conference.schemas import (
     ConferenceCreate,
     ConferenceDeleteResult,
     ConferencePhaseOut,
+    ConferencePolicyUpdate,
     ConferenceResponse,
     ConferenceUpdate,
     ConferenceUpdateResult,
+    SubmissionWindowToggle,
 )
 from src.database import get_db
 from src.security.deps import require_roles
@@ -83,7 +85,15 @@ def get_conferences(db: Session = Depends(get_db)):
             "status": get_conference_status(c),
             "camera_ready_open": c.camera_ready_open,
             "camera_ready_deadline": c.camera_ready_deadline,
-
+            "submission_deadline": c.submission_deadline,
+            "review_deadline": c.review_deadline,
+            "notification_date": c.notification_date,
+            "rebuttal_deadline": c.rebuttal_deadline,
+            "is_submission_open": c.is_submission_open,
+            "blind_mode": c.blind_mode,
+            "min_reviews_per_paper": c.min_reviews_per_paper,
+            "max_paper_pages": c.max_paper_pages,
+            "guidelines": c.guidelines,
         }
         for c in conferences
     ]
@@ -99,6 +109,14 @@ def create_conference(
     start_time: time = Form(...),
     end_date: date = Form(...),
     end_time: time = Form(...),
+    submission_deadline: datetime | None = Form(None),
+    review_deadline: datetime | None = Form(None),
+    notification_date: datetime | None = Form(None),
+    rebuttal_deadline: datetime | None = Form(None),
+    blind_mode: str = Form("DOUBLE_BLIND"),
+    min_reviews_per_paper: int = Form(2),
+    max_paper_pages: int = Form(8),
+    guidelines: str | None = Form(None),
     logo: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
@@ -124,6 +142,12 @@ def create_conference(
             detail="Thời gian bắt đầu phải trước thời gian kết thúc hội nghị."
         )
 
+    if submission_deadline and submission_deadline > start_dt:
+        raise HTTPException(
+            status_code=400,
+            detail="Hạn nộp bài phải trước hoặc bằng ngày bắt đầu hội nghị."
+        )
+
     logo_path = save_image(logo, "conference_logos") if logo else None
 
     new_conference = Conference(
@@ -132,6 +156,15 @@ def create_conference(
         logo=logo_path,
         start_date=start_dt,
         end_date=end_dt,
+        submission_deadline=submission_deadline,
+        review_deadline=review_deadline,
+        notification_date=notification_date,
+        rebuttal_deadline=rebuttal_deadline,
+        is_submission_open=True,
+        blind_mode=blind_mode,
+        min_reviews_per_paper=min_reviews_per_paper,
+        max_paper_pages=max_paper_pages,
+        guidelines=guidelines,
         created_by=user_id,
     )
 
@@ -168,6 +201,15 @@ def get_conference_by_id(conference_id: int, db: Session = Depends(get_db)):
         "created_by": conference.created_by,
         "camera_ready_open": conference.camera_ready_open,
         "camera_ready_deadline": conference.camera_ready_deadline,
+        "submission_deadline": conference.submission_deadline,
+        "review_deadline": conference.review_deadline,
+        "notification_date": conference.notification_date,
+        "rebuttal_deadline": conference.rebuttal_deadline,
+        "is_submission_open": conference.is_submission_open,
+        "blind_mode": conference.blind_mode,
+        "min_reviews_per_paper": conference.min_reviews_per_paper,
+        "max_paper_pages": conference.max_paper_pages,
+        "guidelines": conference.guidelines,
     }
 
 # =========================
@@ -182,6 +224,15 @@ def update_conference(
     start_time: time | None = Form(None),
     end_date: date | None = Form(None),
     end_time: time | None = Form(None),
+    submission_deadline: datetime | None = Form(None),
+    review_deadline: datetime | None = Form(None),
+    notification_date: datetime | None = Form(None),
+    rebuttal_deadline: datetime | None = Form(None),
+    is_submission_open: bool | None = Form(None),
+    blind_mode: str | None = Form(None),
+    min_reviews_per_paper: int | None = Form(None),
+    max_paper_pages: int | None = Form(None),
+    guidelines: str | None = Form(None),
     logo: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
@@ -191,7 +242,16 @@ def update_conference(
         raise HTTPException(status_code=404, detail="Conference not found")
 
     if name: conference.name = name
-    if description: conference.description = description
+    if description is not None: conference.description = description
+    if submission_deadline is not None: conference.submission_deadline = submission_deadline
+    if review_deadline is not None: conference.review_deadline = review_deadline
+    if notification_date is not None: conference.notification_date = notification_date
+    if rebuttal_deadline is not None: conference.rebuttal_deadline = rebuttal_deadline
+    if is_submission_open is not None: conference.is_submission_open = is_submission_open
+    if blind_mode is not None: conference.blind_mode = blind_mode
+    if min_reviews_per_paper is not None: conference.min_reviews_per_paper = min_reviews_per_paper
+    if max_paper_pages is not None: conference.max_paper_pages = max_paper_pages
+    if guidelines is not None: conference.guidelines = guidelines
 
     # Cập nhật thời gian
     current_start = conference.start_date
@@ -289,6 +349,33 @@ def get_conference_phase(conference_id: int, db: Session = Depends(get_db)):
         "conference_id": conf.id,
         "camera_ready_open": getattr(conf, "camera_ready_open", False),
         "camera_ready_deadline": getattr(conf, "camera_ready_deadline", None),
+        "submission_deadline": getattr(conf, "submission_deadline", None),
+        "is_submission_open": getattr(conf, "is_submission_open", True),
+    }
+
+
+# =========================
+# TOGGLE SUBMISSION WINDOW (CHAIR/ADMIN)
+# =========================
+@router.put("/{conference_id}/submission-window")
+def toggle_submission_window(
+    conference_id: int,
+    body: SubmissionWindowToggle,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
+):
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    conf.is_submission_open = body.is_open
+    db.commit()
+    db.refresh(conf)
+
+    return {
+        "conference_id": conf.id,
+        "is_submission_open": conf.is_submission_open,
+        "submission_deadline": conf.submission_deadline,
     }
 
 
@@ -352,6 +439,71 @@ def close_camera_ready(
         "conference_id": conf.id,
         "camera_ready_open": conf.camera_ready_open,
         "camera_ready_deadline": conf.camera_ready_deadline,
+    }
+
+
+# =========================
+# GET GUIDELINES & POLICY (PUBLIC)
+# =========================
+@router.get("/{conference_id}/guidelines")
+def get_conference_guidelines(conference_id: int, db: Session = Depends(get_db)):
+    """API công khai cho Tác giả và Reviewer xem quy định nộp bài & phản biện"""
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    return {
+        "conference_id": conf.id,
+        "conference_name": conf.name,
+        "blind_mode": conf.blind_mode,
+        "min_reviews_per_paper": conf.min_reviews_per_paper,
+        "max_paper_pages": conf.max_paper_pages,
+        "guidelines": conf.guidelines,
+        "submission_deadline": conf.submission_deadline,
+        "review_deadline": conf.review_deadline,
+        "notification_date": conf.notification_date,
+        "camera_ready_deadline": conf.camera_ready_deadline,
+        "is_submission_open": conf.is_submission_open,
+    }
+
+
+# =========================
+# UPDATE POLICY & GUIDELINES (CHAIR/ADMIN)
+# =========================
+@router.put("/{conference_id}/policy")
+def update_conference_policy(
+    conference_id: int,
+    body: ConferencePolicyUpdate,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_roles("ADMIN", "CHAIR")),
+):
+    """API cho Chair cập nhật chính sách phản biện và hướng dẫn nộp bài"""
+    conf = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Conference not found")
+
+    if body.blind_mode is not None:
+        conf.blind_mode = body.blind_mode
+    if body.min_reviews_per_paper is not None:
+        if body.min_reviews_per_paper < 1:
+            raise HTTPException(status_code=400, detail="Số phản biện tối thiểu mỗi bài phải >= 1")
+        conf.min_reviews_per_paper = body.min_reviews_per_paper
+    if body.max_paper_pages is not None:
+        if body.max_paper_pages < 1:
+            raise HTTPException(status_code=400, detail="Số trang tối đa của bài viết phải >= 1")
+        conf.max_paper_pages = body.max_paper_pages
+    if body.guidelines is not None:
+        conf.guidelines = body.guidelines
+
+    db.commit()
+    db.refresh(conf)
+
+    return {
+        "conference_id": conf.id,
+        "blind_mode": conf.blind_mode,
+        "min_reviews_per_paper": conf.min_reviews_per_paper,
+        "max_paper_pages": conf.max_paper_pages,
+        "guidelines": conf.guidelines,
     }
 
 

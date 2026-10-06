@@ -19,6 +19,8 @@ class Track(Base):
         nullable=False
     )
 
+    chair_id = Column(Integer, nullable=True, index=True)  # User ID của Trưởng phân ban (Track Chair)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     conference = relationship(

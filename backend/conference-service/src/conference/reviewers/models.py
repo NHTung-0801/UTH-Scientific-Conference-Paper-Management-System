@@ -1,5 +1,15 @@
 import enum
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.database import Base
@@ -44,7 +54,44 @@ class ConferenceReviewer(Base):
     # Relationships
     conference = relationship("Conference", back_populates="reviewers")
     track = relationship("Track")
+    messages = relationship(
+        "ReviewerMessage",
+        back_populates="reviewer",
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("conference_id", "reviewer_email", name="uq_conference_reviewer_email"),
     )
+
+
+class ReviewerMessage(Base):
+    """
+    Kênh trao đổi / tin nhắn trực tiếp giữa Chair và Reviewer trong phạm vi Hội nghị.
+    """
+    __tablename__ = "conference_reviewer_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conference_id = Column(
+        Integer,
+        ForeignKey("conferences.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    reviewer_pool_id = Column(
+        Integer,
+        ForeignKey("conference_reviewers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    sender_id = Column(Integer, nullable=False, index=True)  # user_id của người gửi (Chair hoặc Reviewer)
+    sender_role = Column(String(50), nullable=False)         # "CHAIR" hoặc "REVIEWER"
+    sender_name = Column(String(255), nullable=True)
+    subject = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    reviewer = relationship("ConferenceReviewer", back_populates="messages")
+    conference = relationship("Conference")
