@@ -31,21 +31,27 @@ def validate_file(upload_file: UploadFile) -> None:
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400, 
-            detail=f"File extension not allowed. Must be: {', '.join(ALLOWED_EXTENSIONS)}"
+            detail=f"Định dạng tệp không được hỗ trợ. Chỉ chấp nhận tệp có đuôi: {', '.join(ALLOWED_EXTENSIONS)}"
         )
     
     # 2. Kiểm tra Content-Type
     if upload_file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="Invalid content type. Must be application/pdf"
+            detail="Content-Type không hợp lệ. Chỉ chấp nhận application/pdf"
         )
     
-    # 3. Kiểm tra kích thước file
+    # 3. Kiểm tra kích thước file và rỗng
     try:
         upload_file.file.seek(0, os.SEEK_END)
         file_size = upload_file.file.tell()
         upload_file.file.seek(0) # Reset con trỏ về đầu để đọc sau này
+
+        if file_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Tệp tải lên không được để rỗng (0 bytes)."
+            )
 
         # Lấy giới hạn từ settings (config.py)
         limit_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
@@ -53,10 +59,27 @@ def validate_file(upload_file: UploadFile) -> None:
         if file_size > limit_bytes:
             raise HTTPException(
                 status_code=400,
-                detail=f"File size too large. Limit is {settings.MAX_FILE_SIZE_MB}MB"
+                detail=f"Dung lượng tệp vượt quá giới hạn cho phép ({settings.MAX_FILE_SIZE_MB}MB)."
             )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error validating file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Lỗi khi kiểm tra dung lượng tệp: {str(e)}")
+
+    # 4. Kiểm tra chữ ký file (Magic Bytes PDF: %PDF-)
+    try:
+        header = upload_file.file.read(5)
+        upload_file.file.seek(0) # Reset con trỏ về đầu file
+
+        if not header.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=400,
+                detail="Tệp tải lên không phải là định dạng PDF hợp lệ (Invalid PDF signature / Magic bytes)."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi kiểm tra chữ ký tệp tin: {str(e)}")
 
 def save_paper_file(
     paper_id: int, 
@@ -121,12 +144,30 @@ def get_file_path_local(relative_path: str) -> str:
     return os.path.join(BASE_UPLOAD_DIR, relative_path)
 
 def save_proceedings_cover(conference_id: int, upload_file: UploadFile) -> str:
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
     ext = os.path.splitext(upload_file.filename or "")[1].lower()
-    if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
-        ext = ".png"
+    allowed_img_exts = {".png", ".jpg", ".jpeg", ".webp"}
+    if ext not in allowed_img_exts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Định dạng ảnh bìa không hợp lệ. Chỉ chấp nhận: {', '.join(allowed_img_exts)}"
+        )
 
+    # Kiểm tra dung lượng ảnh bìa (tối đa 5MB)
+    try:
+        upload_file.file.seek(0, os.SEEK_END)
+        size = upload_file.file.tell()
+        upload_file.file.seek(0)
+
+        if size == 0:
+            raise HTTPException(status_code=400, detail="Tệp ảnh bìa không được để rỗng (0 bytes).")
+        if size > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Dung lượng ảnh bìa vượt quá giới hạn 5MB.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi kiểm tra dung lượng ảnh bìa: {str(e)}")
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     filename = f"proceedings_cover_conf_{conference_id}_{uuid4().hex}{ext}"
     rel_path = os.path.join("proceedings", filename)
     abs_path = os.path.join(UPLOAD_DIR, rel_path)
@@ -134,6 +175,6 @@ def save_proceedings_cover(conference_id: int, upload_file: UploadFile) -> str:
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
     with open(abs_path, "wb") as f:
-        f.write(upload_file.file.read())
+        shutil.copyfileobj(upload_file.file, f)
 
     return f"/proceedings/{filename}"

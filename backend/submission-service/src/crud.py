@@ -2,13 +2,12 @@ from sqlalchemy.orm import Session, selectinload
 import os
 import httpx
 from typing import List, Optional, Dict
-from sqlalchemy import desc, delete
+from sqlalchemy import desc, delete, or_, func
 from datetime import datetime
 from . import models, schemas, exceptions
 import requests
 from pypdf import PdfReader
 from .config import settings
-from sqlalchemy import func
 
 
 # ====================================================
@@ -20,8 +19,8 @@ def create_paper(
     submitter_id: int
 ) -> models.Paper:
     
-    # Kiểm tra deadline bên Conference Service
-    validate_submission_window(paper_data.conference_id)
+    # Kiểm tra deadline & trạng thái mở cổng bên Conference Service
+    conf_info = validate_submission_window(paper_data.conference_id)
 
     # Kiểm tra trùng lặp (Logic NV: Không cho nộp trùng bài đang active)
     existing_paper = db.query(models.Paper).filter(
@@ -39,6 +38,11 @@ def create_paper(
             f"Duplicate submission: You already have an active paper titled '{paper_data.title}' in this conference."
         )
 
+    # Chế độ ẩn danh: Nếu Hội nghị quy định DOUBLE_BLIND thì bắt buộc bật True
+    is_blind = paper_data.is_blind_mode
+    if isinstance(conf_info, dict) and conf_info.get("blind_mode") == "DOUBLE_BLIND":
+        is_blind = True
+
     # Tạo bài báo
     db_paper = models.Paper(
         title=paper_data.title,
@@ -47,7 +51,7 @@ def create_paper(
         conference_id=paper_data.conference_id,
         track_id=paper_data.track_id,
         submitter_id=submitter_id,
-        is_blind_mode=paper_data.is_blind_mode,
+        is_blind_mode=is_blind,
         status=models.PaperStatus.SUBMITTED,
         submitted_at=datetime.utcnow()
     )
@@ -158,7 +162,9 @@ def get_author_paper_detail(
     if not paper:
         raise exceptions.PaperNotFoundError(f"Paper with id {paper_id} not found")
 
-    if paper.submitter_id != submitter_id:
+    is_owner = paper.submitter_id == submitter_id
+    is_coauthor = any(a.user_id == submitter_id for a in (paper.authors or []))
+    if not is_owner and not is_coauthor:
         raise exceptions.NotAuthorizedError("You do not have permission to view this paper")
 
     return paper
@@ -368,30 +374,37 @@ def upload_new_version(
     return new_version
 
 
-# --- HÀM HELPER: KIỂM TRA DEADLINE ---
-def validate_submission_window(conference_id: int):
-    # Logic cũ của bạn (giữ nguyên, nhưng nhớ import requests nếu chưa có)
+# --- HÀM HELPER: KIỂM TRA DEADLINE & CỔNG NỘP BÀI ---
+def validate_submission_window(conference_id: int) -> dict:
+    base = (getattr(settings, "CONFERENCE_SERVICE_URL", "http://conference-service:8000") or "").rstrip("/")
+    url = f"{base}/api/conferences/{conference_id}"
     try:
-        base = (settings.CONFERENCE_SERVICE_URL or "").rstrip("/")
-        url = f"{base}/api/conferences/{conference_id}"
-        resp = requests.get(url, timeout=5)
+        resp = httpx.get(url, timeout=5.0)
+    except Exception:
+        try:
+            resp = requests.get(url, timeout=5)
+        except Exception:
+            raise exceptions.BusinessRuleError("Cannot connect to Conference Service to validate submission window.")
+
+    if resp.status_code != 200:
+        raise exceptions.BusinessRuleError("Conference not found or cannot connect to Conference Service.")
         
-        if resp.status_code != 200:
-            # Fallback hoặc raise error tùy bạn, ở đây raise để an toàn
-            raise Exception("Cannot connect to Conference Service")
-            
-        conf_info = resp.json() # Giả sử trả về dict khớp schema
-        
-        deadline_str = conf_info.get("submission_deadline")
-        if deadline_str:
-            # Parse deadline chuẩn
-            deadline = _parse_deadline(deadline_str)
-            if deadline and datetime.utcnow() > deadline.replace(tzinfo=None):
-                 raise exceptions.DeadlineExceededError(f"Submission deadline passed.")
-        return conf_info
-    
-    except requests.RequestException:
-        raise Exception("Failed to validate conference deadline.")
+    conf_info = resp.json()
+
+    # 1. Kiểm tra công tắc đóng/mở nộp bài thủ công
+    if conf_info.get("is_submission_open") is False:
+        raise exceptions.BusinessRuleError("Cổng nộp bài của hội nghị hiện đang đóng.")
+
+    # 2. Kiểm tra hạn chót nộp bài
+    deadline_str = conf_info.get("submission_deadline")
+    if deadline_str:
+        deadline = _parse_deadline(deadline_str)
+        if deadline:
+            now = datetime.now(deadline.tzinfo) if deadline.tzinfo else datetime.utcnow()
+            if now > deadline:
+                raise exceptions.DeadlineExceededError("Hạn nộp bài của hội nghị đã kết thúc.")
+
+    return conf_info
     
 
 def update_paper_decision(
@@ -436,7 +449,7 @@ def submit_camera_ready(
             f"Cannot submit Camera-Ready version. Paper status is '{paper.status}', but must be 'ACCEPTED'."
         )
     
-    validate_camera_ready_window(paper.conference_id)
+    conf_info = validate_camera_ready_window(paper.conference_id)
 
     # ========================================================
     # 🔥 [FIX] TÌM ĐƯỜNG DẪN FILE THỰC TẾ TRÊN Ổ CỨNG 🔥
@@ -462,17 +475,25 @@ def submit_camera_ready(
         reader = PdfReader(real_path) # Đọc file bằng đường dẫn thực tế
         num_pages = len(reader.pages)
         
-        MAX_PAGES = 15
-        if num_pages > MAX_PAGES:
+        max_pages = conf_info.get("max_paper_pages") or 15 if isinstance(conf_info, dict) else 15
+        if num_pages > max_pages:
             # Xóa file rác nếu vi phạm (dùng real_path)
-            if os.path.exists(real_path):
-                os.remove(real_path)
-            raise exceptions.BusinessRuleError(f"File exceeds page limit. Max is {MAX_PAGES}, got {num_pages}.")
+            try:
+                if os.path.exists(real_path):
+                    os.remove(real_path)
+            except OSError:
+                pass
+            raise exceptions.BusinessRuleError(f"File exceeds page limit. Conference allows max {max_pages} pages, got {num_pages}.")
             
+    except exceptions.BusinessRuleError:
+        raise
     except Exception as e:
         # Xóa file rác nếu lỗi (dùng real_path)
-        if os.path.exists(real_path):
-            os.remove(real_path)
+        try:
+            if os.path.exists(real_path):
+                os.remove(real_path)
+        except OSError:
+            pass
             
         # Log lỗi rõ ràng hơn để debug
         print(f"Error reading PDF at '{real_path}': {str(e)}")
@@ -655,7 +676,7 @@ def validate_camera_ready_window(conference_id: int):
         if now > deadline_dt:
             raise exceptions.BusinessRuleError("Camera-ready deadline has passed.")
 
-    return True
+    return data
 
 def _pick_latest_camera_ready_version(paper) -> Optional[models.PaperVersion]:
     versions = list(paper.versions or [])
@@ -995,9 +1016,17 @@ def send_notification_email(to_email: str, subject: str, content: str):
         print(f"Failed to send email notification: {e}")
 
 
-def get_papers_for_bidding(db: Session, exclude_submitter_id: int = None) -> list[models.Paper]:
+def get_papers_for_bidding(
+    db: Session, 
+    exclude_submitter_id: Optional[int] = None,
+    reviewer_id: Optional[int] = None,
+    reviewer_email: Optional[str] = None
+) -> list[models.Paper]:
     """
     Lấy danh sách bài cho Reviewer chọn (Bidding).
+    Loại trừ để đảm bảo tính khách quan & tránh xung đột lợi ích (COI):
+    - Bài do chính Reviewer nộp (submitter_id)
+    - Bài mà Reviewer là đồng tác giả (paper_authors.user_id hoặc paper_authors.email)
     """
     query = (
         db.query(models.Paper)
@@ -1007,7 +1036,22 @@ def get_papers_for_bidding(db: Session, exclude_submitter_id: int = None) -> lis
         .filter(models.Paper.status == models.PaperStatus.SUBMITTED)
     )
 
-    if exclude_submitter_id:
-        query = query.filter(models.Paper.submitter_id != exclude_submitter_id)
+    effective_user_id = reviewer_id or exclude_submitter_id
+    if effective_user_id:
+        query = query.filter(models.Paper.submitter_id != effective_user_id)
+
+    # Chặn xung đột lợi ích: Reviewer là đồng tác giả
+    coauthor_conditions = []
+    if effective_user_id:
+        coauthor_conditions.append(models.PaperAuthor.user_id == effective_user_id)
+    if reviewer_email and "@" in reviewer_email:
+        coauthor_conditions.append(models.PaperAuthor.email.ilike(reviewer_email.strip()))
+
+    if coauthor_conditions:
+        coauthor_paper_ids_query = (
+            db.query(models.PaperAuthor.paper_id)
+            .filter(or_(*coauthor_conditions))
+        )
+        query = query.filter(models.Paper.id.notin_(coauthor_paper_ids_query))
 
     return query.order_by(desc(models.Paper.submitted_at)).all()

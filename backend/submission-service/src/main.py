@@ -38,8 +38,9 @@ if not os.path.exists(settings.UPLOAD_DIR):
 
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
-# Đăng ký các Router xử lý logic chính
+# Đăng ký các Router xử lý logic chính (Hỗ trợ cả /submissions và /api/submissions)
 app.include_router(submissions.router)
+app.include_router(submissions.router, prefix="/api")
 
 # ---------------------------------------------
 # CÁC API CƠ BẢN & TEST HỆ THỐNG

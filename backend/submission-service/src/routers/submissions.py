@@ -14,7 +14,7 @@ from datetime import datetime
 from uuid import uuid4
 from .. import database, crud, schemas, exceptions, models
 from ..config import settings
-from ..utils.file_handler import save_paper_file, delete_paper_version_file, save_proceedings_cover
+from ..utils.file_handler import save_paper_file, delete_paper_version_file, save_proceedings_cover, validate_file
 from ..security.deps import get_current_payload, require_roles
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -194,7 +194,13 @@ def get_open_papers_for_bidding(
     if not user_id:
         raise HTTPException(status_code=401, detail="Token missing user_id")
 
-    papers = crud.get_papers_for_bidding(db, exclude_submitter_id=user_id)
+    user_email = payload.get("email") or payload.get("sub")
+    papers = crud.get_papers_for_bidding(
+        db, 
+        exclude_submitter_id=user_id,
+        reviewer_id=user_id,
+        reviewer_email=user_email
+    )
     return papers
 
 
@@ -311,7 +317,7 @@ def get_my_submissions(
 
 
 # =========================================================
-# 👇 ĐÃ SỬA: Xem chi tiết bài báo (Hỗ trợ Internal Key)
+# Xem chi tiết bài báo (Hỗ trợ Internal Key & Bảo mật Ẩn danh Double-Blind)
 # =========================================================
 @router.get(
     "/{paper_id}",
@@ -320,43 +326,58 @@ def get_my_submissions(
 def get_submission_detail(
     paper_id: int,
     db: Session = Depends(database.get_db),
-    payload: dict = Depends(get_current_payload),  # Vẫn validate token user (nếu có)
-    x_internal_key: Optional[str] = Header(default=None) # Hứng Internal Key
+    payload: dict = Depends(get_current_payload),
+    x_internal_key: Optional[str] = Header(default=None),
+    x_include_blind_authors: Optional[str] = Header(default=None),
 ):
-    # 1. ƯU TIÊN: Kiểm tra Internal Key (Service-to-Service)
-    # Nếu Key đúng -> Cho phép lấy bài báo bất kỳ (dùng cho AI Service, Review Service...)
-    if x_internal_key and x_internal_key == settings.INTERNAL_KEY:
-        # Lấy bài báo trực tiếp từ DB (bỏ qua check owner)
-        paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-        if not paper:
-            raise HTTPException(status_code=404, detail="Paper not found")
-        return paper
+    paper = (
+        db.query(models.Paper)
+        .options(
+            selectinload(models.Paper.authors),
+            selectinload(models.Paper.topics),
+            selectinload(models.Paper.versions)
+        )
+        .filter(models.Paper.id == paper_id)
+        .first()
+    )
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
 
-    # 2. NẾU KHÔNG CÓ KEY -> Kiểm tra quyền User như bình thường
-    submitter_id = payload.get("user_id")
+    # 1. ƯU TIÊN: Kiểm tra Internal Key (Service-to-Service)
+    if isinstance(x_internal_key, str) and x_internal_key == settings.INTERNAL_KEY:
+        res = schemas.PaperResponse.model_validate(paper)
+        # Nếu bài Double-Blind và không có cờ đặc biệt: ẩn tác giả để bảo mật quy trình phản biện
+        include_blind = isinstance(x_include_blind_authors, str) and x_include_blind_authors.strip().lower() == "true"
+        if paper.is_blind_mode and not include_blind:
+            res.authors = []
+            res.submitter_id = 0
+        return res
+
+    # 2. Xác thực Token User
+    user_id = payload.get("user_id")
     roles = payload.get("roles", [])
 
-    if not submitter_id:
+    if not user_id:
         raise HTTPException(status_code=401, detail="Token missing user_id")
 
-    # Admin hoặc Chair được xem mọi bài
-    if "ADMIN" in roles or "CHAIR" in roles:
-         paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-         if not paper:
-            raise HTTPException(status_code=404, detail="Paper not found")
-         return paper
+    is_admin_or_chair = "ADMIN" in roles or "CHAIR" in roles
+    is_owner_or_coauthor = (
+        paper.submitter_id == user_id or 
+        any(a.user_id == user_id for a in (paper.authors or []))
+    )
+    is_reviewer = "REVIEWER" in roles
 
-    # Author chỉ được xem bài của mình
-    if "AUTHOR" in roles:
-        try:
-            return crud.get_author_paper_detail(db=db, paper_id=paper_id, submitter_id=submitter_id)
-        except exceptions.PaperNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except exceptions.NotAuthorizedError as e:
-             raise HTTPException(status_code=403, detail="Bạn không có quyền xem bài này.")
+    if not is_admin_or_chair and not is_owner_or_coauthor and not is_reviewer:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xem bài báo này.")
 
-    # Các role khác (Reviewer) nếu không đi qua Internal Key thì không cho xem ở API này
-    raise HTTPException(status_code=403, detail="Access denied")
+    res = schemas.PaperResponse.model_validate(paper)
+
+    # 3. Bảo mật ẩn danh: Nếu bài là Double-Blind và caller không phải Chair/Admin/Tác giả
+    if paper.is_blind_mode and not (is_admin_or_chair or is_owner_or_coauthor):
+        res.authors = []  # Ẩn hoàn toàn danh tính tác giả
+        res.submitter_id = 0
+
+    return res
 
 
 # Thêm tác giả: AUTHOR/ADMIN
@@ -493,10 +514,8 @@ def upload_camera_ready(
     if not submitter_id:
         raise HTTPException(status_code=401, detail="Token missing user_id")
 
-    # 2) validate file (đừng chỉ dựa content_type)
-    filename = (file.filename or "").lower()
-    if not (file.content_type == "application/pdf" or filename.endswith(".pdf")):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+    # 2) validate file (kiểm tra toàn diện magic bytes, extension, size)
+    validate_file(file)
 
     # 3) paper exist + owner + ACCEPTED
     paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()

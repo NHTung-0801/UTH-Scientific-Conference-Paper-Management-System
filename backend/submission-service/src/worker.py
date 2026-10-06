@@ -58,9 +58,26 @@ def main():
 
     channel = connection.channel()
     queue_name = "notification_queue"
-    channel.queue_declare(queue=queue_name, durable=True)
+    dlx_name = "dlx_notification"
+    dlq_name = "failed_notification_queue"
+    dlx_routing_key = "notification_dead_letter"
 
-    print(f" [*] Worker started. Waiting for tasks...")
+    # 1. Khai báo Dead Letter Exchange & Queue
+    channel.exchange_declare(exchange=dlx_name, exchange_type="direct", durable=True)
+    channel.queue_declare(queue=dlq_name, durable=True)
+    channel.queue_bind(exchange=dlx_name, queue=dlq_name, routing_key=dlx_routing_key)
+
+    # 2. Khai báo Main Queue gắn với DLX
+    channel.queue_declare(
+        queue=queue_name, 
+        durable=True,
+        arguments={
+            "x-dead-letter-exchange": dlx_name,
+            "x-dead-letter-routing-key": dlx_routing_key,
+        }
+    )
+
+    print(f" [*] Worker started with DLQ ({dlq_name}). Waiting for tasks...")
 
     def callback(ch, method, properties, body):
         try:
@@ -72,19 +89,25 @@ def main():
 
             print(f" [x] RECEIVED TASK: Gửi mail cho {email_to}")
             
-            # 2. Thực hiện gửi mail thật
-            if email_to:
-                send_real_email(email_to, subject, content)
-            else:
-                print(" [!] Error: No receiver email provided")
+            # 2. Kiểm tra tính hợp lệ của email
+            if not email_to or "@" not in str(email_to):
+                raise ValueError(f"Địa chỉ email nhận không hợp lệ hoặc thiếu: '{email_to}'")
 
-            # 3. Báo cáo đã xong việc (ACK) để RabbitMQ xóa tin nhắn đi
+            # 3. Thực hiện gửi mail thật
+            sent = send_real_email(email_to, subject, content)
+            if not sent:
+                # Gửi mail thất bại (SMTP error) -> đẩy vào Dead Letter Queue để không mất dấu
+                print(f" [!] Gửi mail thất bại -> Chuyển vào Dead Letter Queue ({dlq_name})")
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                return
+
+            # 4. Báo cáo đã xong việc (ACK) để RabbitMQ xóa tin nhắn đi
             ch.basic_ack(delivery_tag=method.delivery_tag)
             
         except Exception as e:
-            print(f" [!] Error processing message: {e}")
-            # Nếu lỗi code thì vẫn ACK để tránh loop vô tận (hoặc xử lý Dead Letter sau này)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            print(f" [!] Error processing message ({e}) -> Chuyển vào Dead Letter Queue ({dlq_name})")
+            # NACK với requeue=False: RabbitMQ tự động đẩy thông điệp lỗi sang DLX -> DLQ
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=queue_name, on_message_callback=callback)
