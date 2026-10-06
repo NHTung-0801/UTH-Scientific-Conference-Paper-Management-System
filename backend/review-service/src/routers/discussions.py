@@ -16,29 +16,38 @@ router = APIRouter(prefix="/discussions", tags=["Review Discussions"])
 SUBMISSION_SERVICE_URL = os.getenv("SUBMISSION_SERVICE_URL", "http://submission-service:8000").rstrip("/")
 INTERNAL_KEY = os.getenv("INTERNAL_KEY", "")
 
-async def _get_paper_author_id(paper_id: int) -> int:
+async def _get_paper_author_ids(paper_id: int) -> tuple[int, set[int]]:
     """
-    Hàm này KHÔNG ảnh hưởng logic cũ.
-    Chỉ dùng để xác định ai là Author của bài báo.
+    Xác định submitter_id và tập hợp tất cả user_id của tác giả/đồng tác giả từ Submission Service.
     """
     if not SUBMISSION_SERVICE_URL:
-        return -1
+        return -1, set()
 
-    url = f"{SUBMISSION_SERVICE_URL}/api/submissions/{paper_id}"
+    url = f"{SUBMISSION_SERVICE_URL}/submissions/{paper_id}"
     headers = {}
     if INTERNAL_KEY:
         headers["X-Internal-Key"] = INTERNAL_KEY
+        headers["X-Include-Blind-Authors"] = "true"
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(url, headers=headers)
+            if r.status_code == 404:
+                # Fallback nếu service mount ở /api/submissions/
+                r = await client.get(f"{SUBMISSION_SERVICE_URL}/api/submissions/{paper_id}", headers=headers)
             if r.status_code == 200:
                 data = r.json()
-                return int(data.get("created_by") or data.get("user_id") or data.get("author_id") or -1)
+                submitter_id = int(data.get("submitter_id") or data.get("created_by") or data.get("user_id") or data.get("author_id") or -1)
+                coauthor_ids = {int(a.get("user_id")) for a in data.get("authors", []) if a.get("user_id")}
+                return submitter_id, coauthor_ids
     except Exception:
         pass
     
-    return -1
+    return -1, set()
+
+async def _get_paper_author_id(paper_id: int) -> int:
+    sub_id, _ = await _get_paper_author_ids(paper_id)
+    return sub_id
 
 
 @router.post(
@@ -64,10 +73,10 @@ async def create_discussion(
             is_reviewer_assigned = True
 
     is_author_owner = False
-    paper_author_id = await _get_paper_author_id(data.paper_id)
+    paper_author_id, coauthor_ids = await _get_paper_author_ids(data.paper_id)
     
     if "AUTHOR" in roles:
-        if user_id == paper_author_id:
+        if user_id == paper_author_id or user_id in coauthor_ids:
             is_author_owner = True
 
     if not is_reviewer_assigned and not is_author_owner and "ADMIN" not in roles and "CHAIR" not in roles:
@@ -138,7 +147,8 @@ async def list_discussions(
     if not user_id:
         raise HTTPException(401, "Token missing user_id")
 
-    paper_author_id = await _get_paper_author_id(paper_id)
+    paper_author_id, coauthor_ids = await _get_paper_author_ids(paper_id)
+    all_author_ids = ({paper_author_id} | coauthor_ids) - {-1}
 
     is_viewer_reviewer = False
     is_viewer_author = False
@@ -148,7 +158,7 @@ async def list_discussions(
             is_viewer_reviewer = True
 
     if "AUTHOR" in roles:
-        if user_id == paper_author_id:
+        if user_id in all_author_ids:
             is_viewer_author = True
 
     is_admin_chair = "ADMIN" in roles or "CHAIR" in roles
@@ -159,14 +169,14 @@ async def list_discussions(
     raw_msgs = crud.list_discussions(db, paper_id)
     reviewer_ids = sorted({
         m.sender_id for m in raw_msgs
-        if m.sender_id is not None and m.sender_id != paper_author_id
+        if m.sender_id is not None and m.sender_id not in all_author_ids
     })
     reviewer_alias_map = {rid: f"R{idx+1}" for idx, rid in enumerate(reviewer_ids)}
 
     results = []
     for m in raw_msgs:
         is_me = (m.sender_id == user_id)
-        is_author_msg = (m.sender_id == paper_author_id)
+        is_author_msg = (m.sender_id in all_author_ids)
         if is_author_msg:
             sender_role = "AUTHOR"
         else:
