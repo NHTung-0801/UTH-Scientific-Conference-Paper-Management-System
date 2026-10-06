@@ -26,9 +26,15 @@ uploads/
 
 # OS
 .DS_Store
-Thumbs.dbbackend/notification-service/src/serviceAccountKey.json
+Thumbs.db
+backend/notification-service/src/serviceAccountKey.json
 
 **/serviceAccountKey.json
 **/*serviceAccount*.json
 *.pem
 *.key
+
+# --- CHẶN TÀI LIỆU NỘI BỘ (không lên GitHub) ---
+# Luật AI, kế hoạch, và tài liệu kiến trúc chỉ dùng nội bộ
+.agents/
+docs/
