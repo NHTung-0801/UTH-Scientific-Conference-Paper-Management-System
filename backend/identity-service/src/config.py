@@ -21,4 +21,6 @@ class Settings(BaseSettings):
     NOTIFICATION_SERVICE_URL: str = "http://notification-service:8000"
     INTERNAL_KEY: str = "secret_123" 
 
+    REDIS_URL: str = "redis://redis:6379/0"
+
 settings = Settings()

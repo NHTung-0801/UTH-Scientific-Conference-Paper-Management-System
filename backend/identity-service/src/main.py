@@ -25,9 +25,8 @@ app = FastAPI(title="UTH Conference Identity Service")
 app.include_router(auth.router)
 app.include_router(users.router)
 
-models.Base.metadata.create_all(bind=engine)
-
 def init_roles_and_admin():
+
     db = SessionLocal()
     try:
         print("--- Starting seed roles & admin ---")
@@ -97,8 +96,14 @@ def init_roles_and_admin():
 
 @app.on_event("startup")
 def on_startup():
+    try:
+        models.Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Lỗi khởi tạo tables: {e}")
+
     if os.getenv("SEED_ON_STARTUP", "true").lower() == "true":
         init_roles_and_admin()
+
 
 
 @app.get("/")

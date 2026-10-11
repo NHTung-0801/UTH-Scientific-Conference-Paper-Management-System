@@ -61,7 +61,7 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: Optional[str] = None
     all_devices: bool = False
 
 class UserUpdate(BaseModel):

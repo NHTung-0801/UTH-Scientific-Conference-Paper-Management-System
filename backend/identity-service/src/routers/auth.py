@@ -1,6 +1,8 @@
 # backend/identity-service/src/routers/auth.py
 import os
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
@@ -15,11 +17,14 @@ from src.auth import (
     create_refresh_token,
     hash_token, 
     get_password_hash,
+    decode_token,
     SECRET_KEY,
     ALGORITHM,
-    REFRESH_TOKEN_EXPIRE_DAYS
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    ACCESS_TOKEN_EXPIRE_MINUTES
 )
-from src.dependencies import get_current_payload
+from src.dependencies import get_current_payload, get_client_ip, check_rate_limit, security
+from src.utils.redis_client import redis_client
 from src.utils.notification_client import send_email_via_notification_service
 
 router = APIRouter(
@@ -38,10 +43,22 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 # --- 2. API ĐĂNG NHẬP (Login) ---
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
+def login(data: schemas.LoginRequest, request: Request, db: Session = Depends(get_db)):
+    client_ip = get_client_ip(request)
+    fail_key = f"ratelimit:login:failed:{client_ip}"
+    current_fails = redis_client.get(fail_key)
+    if current_fails and int(current_fails) >= 5:
+        ttl = redis_client.get_ttl(fail_key) or 60
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Quá nhiều lần thử đăng nhập thất bại. Vui lòng thử lại sau {ttl} giây.",
+            headers={"Retry-After": str(ttl)},
+        )
+
     user = crud.get_user_by_email(db, data.email)
 
     if not user or not verify_password(data.password, user.password_hash):
+        redis_client.incr_with_expiry(fail_key, window_seconds=60)
         # [AUDIT LOG] Ghi vết cảnh báo đăng nhập thất bại
         crud.log_activity(
             db,
@@ -55,6 +72,9 @@ def login(data: schemas.LoginRequest, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Đăng nhập thành công -> Xóa bộ đếm thất bại của IP này
+    redis_client.delete(fail_key)
 
     role_names = [role.role_name.upper() for role in user.roles]
 
@@ -211,24 +231,63 @@ def refresh(body: schemas.RefreshRequest, db: Session = Depends(get_db)):
 
 # --- 4. API ĐĂNG XUẤT ---
 @router.post("/logout")
-def logout(body: schemas.LogoutRequest, db: Session = Depends(get_db)):
-    try:
-        payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+def logout(
+    request: Request,
+    body: Optional[schemas.LogoutRequest] = None,
+    db: Session = Depends(get_db),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    user_id = None
+    all_devices = body.all_devices if body else False
 
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid refresh token payload")
+    # 1. Thu hồi Access Token (nếu client gửi Authorization: Bearer <token>)
+    if credentials and credentials.credentials:
+        try:
+            payload = decode_token(credentials.credentials)
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            token_user_id = payload.get("user_id") or payload.get("id")
+            if token_user_id:
+                user_id = token_user_id
 
-    if body.all_devices:
-        crud.revoke_all_refresh_tokens_of_user(db, user_id=user_id)
-        return {"message": "Logout all devices successful"}
+            now_ts = datetime.utcnow().timestamp()
+            if isinstance(exp, (int, float)):
+                remaining_ttl = max(1, int(exp - now_ts))
+            else:
+                remaining_ttl = ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
-    token_hash = hash_token(body.refresh_token)
-    crud.revoke_refresh_token(db, token_hash)
+            if jti:
+                redis_client.setex(f"blacklist:jti:{jti}", remaining_ttl, "revoked")
+        except Exception:
+            pass
 
-    return {"message": "Logout successful"}
+    # 2. Xử lý Refresh Token (nếu client gửi kèm refresh_token trong body)
+    if body and body.refresh_token:
+        try:
+            rf_payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+            rf_user_id = rf_payload.get("user_id")
+            if rf_user_id:
+                user_id = rf_user_id
+
+            if not all_devices:
+                token_hash = hash_token(body.refresh_token)
+                crud.revoke_refresh_token(db, token_hash)
+        except JWTError:
+            if not credentials:
+                raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    # 3. Đăng xuất khỏi tất cả thiết bị
+    if all_devices and user_id:
+        crud.revoke_all_refresh_tokens_of_user(db, user_id=int(user_id))
+        now_ts = int(datetime.utcnow().timestamp())
+        redis_client.setex(f"user:pwd_change:{user_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, str(now_ts))
+        crud.log_activity(db, user_id=int(user_id), action="Đăng xuất khỏi tất cả thiết bị", target="Portal", status="SUCCESS")
+        return {"message": "Đăng xuất khỏi tất cả thiết bị thành công"}
+
+    if user_id:
+        crud.log_activity(db, user_id=int(user_id), action="Đăng xuất hệ thống", target="Portal", status="SUCCESS")
+
+    return {"message": "Đăng xuất thành công"}
 
 
 # --- 5. QUÊN MẬT KHẨU ---
@@ -238,6 +297,15 @@ def forgot_password(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
+    # Rate Limit: Tối đa 3 lần yêu cầu trong 5 phút (300s) cho mỗi email
+    email_clean = request.email.strip().lower()
+    check_rate_limit(
+        key=f"ratelimit:forgot_password:{email_clean}",
+        limit=3,
+        window_seconds=300,
+        error_message="Bạn đã yêu cầu gửi mã OTP quá 3 lần.",
+    )
+
     token = crud.create_reset_token(db, request.email)
     
     if token:
@@ -286,7 +354,11 @@ def reset_password(
     # 2. [SECURITY] Thu hồi toàn bộ Refresh Token của các thiết bị khác
     crud.revoke_all_refresh_tokens_of_user(db, user_id=user_id)
 
-    # 3. [AUDIT LOG] Ghi nhận hành vi
+    # 3. [SECURITY] Vô hiệu hóa tức thì toàn bộ Access Token đã cấp trước thời điểm này
+    now_ts = int(datetime.utcnow().timestamp())
+    redis_client.setex(f"user:pwd_change:{user_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, str(now_ts))
+
+    # 4. [AUDIT LOG] Ghi nhận hành vi
     crud.log_activity(
         db,
         user_id=user_id,
@@ -301,16 +373,30 @@ def reset_password(
 # --- 7. XÁC THỰC OTP ---
 @router.post("/verify-otp")
 def verify_otp_endpoint(req: schemas.VerifyOtpRequest, db: Session = Depends(get_db)):
+    email_clean = req.email.strip().lower()
+    otp_fail_key = f"ratelimit:verify_otp:{email_clean}"
+    current_fails = redis_client.get(otp_fail_key)
+    if current_fails and int(current_fails) >= 5:
+        ttl = redis_client.get_ttl(otp_fail_key) or 300
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Đã nhập sai OTP quá 5 lần. Vui lòng chờ {ttl} giây trước khi thử lại.",
+            headers={"Retry-After": str(ttl)},
+        )
+
     user = crud.get_user_by_email(db, req.email)
     if not user:
-         raise HTTPException(status_code=404, detail="User not found")
-    
+        raise HTTPException(status_code=404, detail="User not found")
+
     if user.reset_token != req.otp:
-         raise HTTPException(status_code=400, detail="Invalid OTP")
-         
+        redis_client.incr_with_expiry(otp_fail_key, window_seconds=300)
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
     if user.reset_token_expires_at < datetime.utcnow():
-         raise HTTPException(status_code=400, detail="OTP Expired")
-         
+        raise HTTPException(status_code=400, detail="OTP Expired")
+
+    # Xác thực thành công -> Xóa bộ đếm sai
+    redis_client.delete(otp_fail_key)
     return {"message": "OTP Valid", "token": req.otp}
 
 @router.post("/change-password")
@@ -342,6 +428,10 @@ def change_password(
 
     # [SECURITY] Thu hồi toàn bộ Refresh Token của các thiết bị khác khi đổi mật khẩu
     crud.revoke_all_refresh_tokens_of_user(db, user_id=user.id)
+
+    # [SECURITY] Vô hiệu hóa tức thì toàn bộ Access Token đã cấp trước thời điểm này
+    now_ts = int(datetime.utcnow().timestamp())
+    redis_client.setex(f"user:pwd_change:{user.id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, str(now_ts))
 
     # [AUDIT LOG] Ghi nhận hành vi đổi mật khẩu
     crud.log_activity(

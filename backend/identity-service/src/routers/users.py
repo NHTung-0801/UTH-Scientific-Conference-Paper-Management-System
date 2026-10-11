@@ -3,11 +3,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
+from datetime import datetime
 
 from src.database import get_db
 from src import models, schemas, crud
-
 from src.dependencies import require_user, require_admin, require_admin_or_chair
+from src.utils.redis_client import redis_client
 
 # --- ROUTER CONFIG ---
 
@@ -172,6 +173,9 @@ def update_user_role(
     admin_id = payload.get("user_id")
     crud.log_activity(db, user_id=admin_id, action="Thay đổi quyền hạn", target=f"User ID {user_id} -> {body.role_name}")
 
+    # [SECURITY] Vô hiệu hóa các phiên đăng nhập cũ để buộc đăng nhập lại với role mới
+    redis_client.setex(f"user:pwd_change:{user_id}", 1800, str(int(datetime.utcnow().timestamp())))
+
     return {"message": "Role updated", "user_id": user_id, "role": body.role_name}
 
 
@@ -208,6 +212,10 @@ def delete_user(
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     
+    # [SECURITY] Thu hồi mọi phiên làm việc và refresh token của tài khoản đã xóa
+    redis_client.setex(f"user:pwd_change:{user_id}", 1800, str(int(datetime.utcnow().timestamp())))
+    crud.revoke_all_refresh_tokens_of_user(db, user_id=user_id)
+
     # Ghi log admin xóa user
     admin_id = payload.get("user_id")
     crud.log_activity(db, user_id=admin_id, action="Xóa người dùng", target=f"User ID {user_id}")
