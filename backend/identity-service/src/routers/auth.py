@@ -1,0 +1,445 @@
+# backend/identity-service/src/routers/auth.py
+import os
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+import firebase_admin
+from firebase_admin import auth as firebase_auth
+
+from src.database import get_db
+from src import schemas, crud, models
+from src.auth import (
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    hash_token, 
+    get_password_hash,
+    decode_token,
+    SECRET_KEY,
+    ALGORITHM,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
+from src.dependencies import get_current_payload, get_client_ip, check_rate_limit, security
+from src.utils.redis_client import redis_client
+from src.utils.notification_client import send_email_via_notification_service
+
+router = APIRouter(
+    prefix="/api/auth",
+    tags=["Authentication"]
+)
+
+# --- 1. API ĐĂNG KÝ (Register) ---
+@router.post("/register", response_model=schemas.UserResponse)
+def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    return crud.create_user(db=db, user=user)
+
+
+# --- 2. API ĐĂNG NHẬP (Login) ---
+@router.post("/login", response_model=schemas.TokenResponse)
+def login(data: schemas.LoginRequest, request: Request, db: Session = Depends(get_db)):
+    client_ip = get_client_ip(request)
+    fail_key = f"ratelimit:login:failed:{client_ip}"
+    current_fails = redis_client.get(fail_key)
+    if current_fails and int(current_fails) >= 5:
+        ttl = redis_client.get_ttl(fail_key) or 60
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Quá nhiều lần thử đăng nhập thất bại. Vui lòng thử lại sau {ttl} giây.",
+            headers={"Retry-After": str(ttl)},
+        )
+
+    user = crud.get_user_by_email(db, data.email)
+
+    if not user or not verify_password(data.password, user.password_hash):
+        redis_client.incr_with_expiry(fail_key, window_seconds=60)
+        # [AUDIT LOG] Ghi vết cảnh báo đăng nhập thất bại
+        crud.log_activity(
+            db,
+            user_id=user.id if user else None,
+            action="Đăng nhập thất bại (Sai email/mật khẩu)",
+            target="Portal Auth",
+            status="FAILED"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Đăng nhập thành công -> Xóa bộ đếm thất bại của IP này
+    redis_client.delete(fail_key)
+
+    role_names = [role.role_name.upper() for role in user.roles]
+
+    # Tạo Access Token
+    access_token = create_access_token(
+        subject=user.email,
+        user_id=user.id,
+        roles=role_names,
+        id=user.id 
+    )
+
+    refresh_token = create_refresh_token(
+        subject=user.email,
+        user_id=user.id,
+    )
+
+    refresh_hash = hash_token(refresh_token)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud.save_refresh_token(db, user_id=user.id, token_hash=refresh_hash, expires_at=expires_at)
+    crud.log_activity(db, user_id=user.id, action="Đăng nhập hệ thống", target="Portal")
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
+
+
+@router.post("/login/firebase", response_model=schemas.TokenResponse)
+def login_with_firebase(
+    request: schemas.FirebaseLoginRequest, 
+    db: Session = Depends(get_db)
+):
+    try:
+        # [FIX ARCHITECT] Sử dụng clock_skew_seconds=10 để xử lý lệch giờ (clock skew)
+        # thay vì gọi time.sleep(3) làm khóa threadpool của worker
+        decoded_token = firebase_auth.verify_id_token(request.token, clock_skew_seconds=10)
+        email = decoded_token.get('email')
+        name = decoded_token.get('name', 'Firebase User')
+        
+        if not email:
+             raise HTTPException(status_code=400, detail="Google account must have an email")
+
+    except Exception as e:
+        print(f"Firebase Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid Firebase Token"
+        )
+
+    # 2. Tìm User trong DB
+    user = crud.get_user_by_email(db, email=email)
+
+    # 3. Nếu chưa có user -> Tạo mới (Auto-registration)
+    if not user:
+        print(f"--> Creating new user from Firebase: {email}")
+        
+        # Tìm role AUTHOR
+        author_role = db.query(models.Role).filter(models.Role.role_name == "AUTHOR").first()
+        
+        user = models.User(
+            email=email,
+            full_name=name,
+            password_hash=get_password_hash("FIREBASE_OAUTH_LOGIN"), # Mật khẩu ngẫu nhiên
+            is_active=True
+        )
+        if author_role:
+             user.roles.append(author_role)
+             
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="User is inactive")
+
+    # 4. Cấp Token (Logic giống hệt hàm login thường)
+    role_names = [role.role_name.upper() for role in user.roles]
+
+    access_token = create_access_token(
+        subject=user.email,
+        user_id=user.id,
+        roles=role_names,
+        id=user.id 
+    )
+
+    refresh_token = create_refresh_token(
+        subject=user.email,
+        user_id=user.id,
+    )
+
+    # Lưu refresh token vào DB
+    refresh_hash = hash_token(refresh_token)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud.save_refresh_token(db, user_id=user.id, token_hash=refresh_hash, expires_at=expires_at)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
+
+
+# --- 3. API REFRESH TOKEN ---
+@router.post("/refresh", response_model=schemas.TokenResponse)
+def refresh(body: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token type")
+
+    user_id = payload.get("user_id")
+    email = payload.get("sub")
+    if not user_id or not email:
+        raise HTTPException(status_code=401, detail="Invalid refresh token payload")
+
+    token_hash = hash_token(body.refresh_token)
+    rt = crud.get_valid_refresh_token(db, token_hash)
+    if not rt:
+        raise HTTPException(status_code=401, detail="Refresh token revoked or expired")
+
+    user = crud.get_user_by_email(db, email=email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    role_names = [r.role_name.upper() for r in user.roles]
+
+    new_access = create_access_token(
+        subject=user.email,
+        user_id=user.id,
+        roles=role_names,
+        id=user.id
+    )
+
+    crud.revoke_refresh_token(db, token_hash)
+
+    new_refresh = create_refresh_token(
+        subject=user.email,
+        user_id=user.id,
+    )
+    new_refresh_hash = hash_token(new_refresh)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud.save_refresh_token(db, user_id=user.id, token_hash=new_refresh_hash, expires_at=expires_at)
+
+    return {
+        "access_token": new_access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+    }
+
+
+# --- 4. API ĐĂNG XUẤT ---
+@router.post("/logout")
+def logout(
+    request: Request,
+    body: Optional[schemas.LogoutRequest] = None,
+    db: Session = Depends(get_db),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    user_id = None
+    all_devices = body.all_devices if body else False
+
+    # 1. Thu hồi Access Token (nếu client gửi Authorization: Bearer <token>)
+    if credentials and credentials.credentials:
+        try:
+            payload = decode_token(credentials.credentials)
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            token_user_id = payload.get("user_id") or payload.get("id")
+            if token_user_id:
+                user_id = token_user_id
+
+            now_ts = datetime.utcnow().timestamp()
+            if isinstance(exp, (int, float)):
+                remaining_ttl = max(1, int(exp - now_ts))
+            else:
+                remaining_ttl = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+            if jti:
+                redis_client.setex(f"blacklist:jti:{jti}", remaining_ttl, "revoked")
+        except Exception:
+            pass
+
+    # 2. Xử lý Refresh Token (nếu client gửi kèm refresh_token trong body)
+    if body and body.refresh_token:
+        try:
+            rf_payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+            rf_user_id = rf_payload.get("user_id")
+            if rf_user_id:
+                user_id = rf_user_id
+
+            if not all_devices:
+                token_hash = hash_token(body.refresh_token)
+                crud.revoke_refresh_token(db, token_hash)
+        except JWTError:
+            if not credentials:
+                raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    # 3. Đăng xuất khỏi tất cả thiết bị
+    if all_devices and user_id:
+        crud.revoke_all_refresh_tokens_of_user(db, user_id=int(user_id))
+        now_ts = int(datetime.utcnow().timestamp())
+        redis_client.setex(f"user:pwd_change:{user_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, str(now_ts))
+        crud.log_activity(db, user_id=int(user_id), action="Đăng xuất khỏi tất cả thiết bị", target="Portal", status="SUCCESS")
+        return {"message": "Đăng xuất khỏi tất cả thiết bị thành công"}
+
+    if user_id:
+        crud.log_activity(db, user_id=int(user_id), action="Đăng xuất hệ thống", target="Portal", status="SUCCESS")
+
+    return {"message": "Đăng xuất thành công"}
+
+
+# --- 5. QUÊN MẬT KHẨU ---
+@router.post("/forgot-password", summary="Step 1: Request reset token via email")
+def forgot_password(
+    request: schemas.ForgotPasswordRequest, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    # Rate Limit: Tối đa 3 lần yêu cầu trong 5 phút (300s) cho mỗi email
+    email_clean = request.email.strip().lower()
+    check_rate_limit(
+        key=f"ratelimit:forgot_password:{email_clean}",
+        limit=3,
+        window_seconds=300,
+        error_message="Bạn đã yêu cầu gửi mã OTP quá 3 lần.",
+    )
+
+    token = crud.create_reset_token(db, request.email)
+    
+    if token:
+        user = crud.get_user_by_email(db, request.email)
+        if user:
+            email_subject = "[UTH-ConfMS] Mã xác nhận khôi phục mật khẩu"
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; max-width: 500px;">
+                <h2 style="color: #1173d4; text-align: center;">Yêu cầu đặt lại mật khẩu</h2>
+                <p>Mã xác thực (OTP) của bạn là:</p>
+                <div style="background-color: #f0f8ff; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                    <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1173d4;">{token}</span>
+                </div>
+                <p style="color: #666; font-size: 13px;">Mã này sẽ hết hạn sau 15 phút.</p>
+            </div>
+            """
+
+            background_tasks.add_task(
+                send_email_via_notification_service, 
+                to_email=request.email,
+                subject=email_subject, 
+                content=html_content,
+                receiver_id=user.id
+            )
+    
+    return {"message": "If this email is registered, you will receive an OTP via email."}
+
+
+# --- 6. ĐẶT LẠI MẬT KHẨU ---
+@router.post("/reset-password", summary="Step 2: Submit new password with token")
+def reset_password(
+    request: schemas.ResetPasswordRequest, 
+    db: Session = Depends(get_db)
+):
+    user = crud.verify_reset_token(db, request.token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid or expired reset token"
+        )
+    
+    user_id = user.id
+    # 1. Cập nhật mật khẩu mới và hủy OTP
+    crud.reset_password(db, request.token, request.new_password)
+
+    # 2. [SECURITY] Thu hồi toàn bộ Refresh Token của các thiết bị khác
+    crud.revoke_all_refresh_tokens_of_user(db, user_id=user_id)
+
+    # 3. [SECURITY] Vô hiệu hóa tức thì toàn bộ Access Token đã cấp trước thời điểm này
+    now_ts = int(datetime.utcnow().timestamp())
+    redis_client.setex(f"user:pwd_change:{user_id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, str(now_ts))
+
+    # 4. [AUDIT LOG] Ghi nhận hành vi
+    crud.log_activity(
+        db,
+        user_id=user_id,
+        action="Đặt lại mật khẩu qua OTP",
+        target="Account Security",
+        status="SUCCESS"
+    )
+    
+    return {"message": "Mật khẩu đã thay đổi thành công!"}
+
+
+# --- 7. XÁC THỰC OTP ---
+@router.post("/verify-otp")
+def verify_otp_endpoint(req: schemas.VerifyOtpRequest, db: Session = Depends(get_db)):
+    email_clean = req.email.strip().lower()
+    otp_fail_key = f"ratelimit:verify_otp:{email_clean}"
+    current_fails = redis_client.get(otp_fail_key)
+    if current_fails and int(current_fails) >= 5:
+        ttl = redis_client.get_ttl(otp_fail_key) or 300
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Đã nhập sai OTP quá 5 lần. Vui lòng chờ {ttl} giây trước khi thử lại.",
+            headers={"Retry-After": str(ttl)},
+        )
+
+    user = crud.get_user_by_email(db, req.email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.reset_token != req.otp:
+        redis_client.incr_with_expiry(otp_fail_key, window_seconds=300)
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    if user.reset_token_expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP Expired")
+
+    # Xác thực thành công -> Xóa bộ đếm sai
+    redis_client.delete(otp_fail_key)
+    return {"message": "OTP Valid", "token": req.otp}
+
+@router.post("/change-password")
+def change_password(
+    body: schemas.ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    payload = Depends(get_current_payload) # Bắt buộc phải có Token đăng nhập
+):
+    """
+    Đổi mật khẩu cho user đang đăng nhập.
+    Yêu cầu: Access Token hợp lệ.
+    """
+    # 1. Lấy User ID từ Token Payload
+    # Payload của bạn có 'user_id' hoặc 'id' (do create_access_token trong src/auth.py tạo ra)
+    user_id = payload.get("user_id") or payload.get("id")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token invalid: Missing user_id")
+
+    # 2. Tìm user trong DB
+    user = crud.get_user_by_id(db, int(user_id))
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not verify_password(body.old_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Mật khẩu cũ không chính xác")
+    if body.old_password == body.new_password:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới không được trùng với mật khẩu cũ")
+    crud.update_password(db, user.id, body.new_password)
+
+    # [SECURITY] Thu hồi toàn bộ Refresh Token của các thiết bị khác khi đổi mật khẩu
+    crud.revoke_all_refresh_tokens_of_user(db, user_id=user.id)
+
+    # [SECURITY] Vô hiệu hóa tức thì toàn bộ Access Token đã cấp trước thời điểm này
+    now_ts = int(datetime.utcnow().timestamp())
+    redis_client.setex(f"user:pwd_change:{user.id}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, str(now_ts))
+
+    # [AUDIT LOG] Ghi nhận hành vi đổi mật khẩu
+    crud.log_activity(
+        db,
+        user_id=user.id,
+        action="Đổi mật khẩu tài khoản",
+        target="Account Security",
+        status="SUCCESS"
+    )
+
+    return {"message": "Đổi mật khẩu thành công."}
