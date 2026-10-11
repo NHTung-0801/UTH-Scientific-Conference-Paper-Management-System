@@ -272,4 +272,28 @@ class PaperReviewMetrics(BaseModel):
     has_discrepancy: bool = False
     discrepancy_reason: Optional[str] = None
     recommendation: str  # "ACCEPT", "REVISION", "REJECT", "PENDING"
-    reviews: List[ReviewScoreItem] = []
+    reviews: List[ReviewScoreItem] = []
+
+
+# =========================================================
+# REVIEWER PERFORMANCE SCHEMAS
+# =========================================================
+
+class ReviewerEvaluationItem(BaseModel):
+    review_id: int
+    paper_id: Optional[int] = None
+    rating: Optional[int] = None
+    comment: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ReviewerPerformanceOut(BaseModel):
+    reviewer_id: int
+    total_assignments: int
+    completed_reviews: int
+    evaluated_reviews: int
+    average_rating: Optional[float] = None
+    evaluations: List[ReviewerEvaluationItem] = []
+
