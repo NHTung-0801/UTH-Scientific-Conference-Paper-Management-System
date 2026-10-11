@@ -79,6 +79,12 @@ class Assignment(Base):
         cascade="all, delete-orphan",
     )
 
+    extension_requests = relationship(
+        "ExtensionRequest",
+        back_populates="assignment",
+        cascade="all, delete-orphan",
+    )
+
 
 # =========================================================
 # REVIEWS
@@ -255,6 +261,30 @@ class ReviewEvaluation(Base):
     comment = Column(Text, nullable=True)   # Nhận xét công khai cho Reviewer thấy
     
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# =========================================================
+# EXTENSION REQUESTS (Yêu cầu gia hạn nộp phản biện)
+# =========================================================
+
+class ExtensionRequest(Base):
+    __tablename__ = "extension_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(
+        Integer,
+        ForeignKey("assignments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    reviewer_id = Column(Integer, nullable=False, index=True)
+    requested_date = Column(DateTime, nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(50), default="PENDING")  # PENDING, APPROVED, REJECTED
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    assignment = relationship("Assignment", back_populates="extension_requests")
 
 
 # =========================================================

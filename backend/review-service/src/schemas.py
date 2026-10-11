@@ -219,3 +219,57 @@ class ChairPaperReviewSummary(BaseModel):
     all_submitted: bool
     latest_submitted_at: Optional[datetime] = None
     assignments: List[ChairAssignmentItem] = []
+
+
+# =========================================================
+# EXTENSION REQUESTS SCHEMAS
+# =========================================================
+
+class ExtensionCreate(BaseModel):
+    assignment_id: int
+    requested_date: datetime
+    reason: str
+
+class ExtensionAction(BaseModel):
+    status: str  # "APPROVED" hoặc "REJECTED"
+
+class ExtensionOut(BaseModel):
+    id: int
+    assignment_id: int
+    reviewer_id: int
+    requested_date: datetime
+    reason: str
+    status: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# =========================================================
+# DECISIONS & METRICS SCHEMAS
+# =========================================================
+
+class ReviewScoreItem(BaseModel):
+    review_id: int
+    reviewer_label: Optional[str] = None
+    final_score: Optional[float] = None
+    confidence_score: Optional[int] = None
+    is_draft: bool = False
+    submitted_at: Optional[datetime] = None
+
+class PaperReviewMetrics(BaseModel):
+    paper_id: int
+    total_assignments: int
+    total_reviews: int
+    completed_reviews: int
+    average_score: Optional[float] = None
+    weighted_score: Optional[float] = None
+    min_score: Optional[float] = None
+    max_score: Optional[float] = None
+    score_spread: Optional[float] = None
+    has_discrepancy: bool = False
+    discrepancy_reason: Optional[str] = None
+    recommendation: str  # "ACCEPT", "REVISION", "REJECT", "PENDING"
+    reviews: List[ReviewScoreItem] = []

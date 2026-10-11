@@ -1,7 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.database import Base, engine
-from src.routers import assignments, reviews, coi, discussions, papers,bids,extensions,rebuttals
+from src.routers import (
+    assignments,
+    reviews,
+    coi,
+    discussions,
+    papers,
+    bids,
+    extensions,
+    rebuttals,
+    chair,
+    decisions,
+)
 
 app = FastAPI(title="UTH Conference Review Service")
 
@@ -34,3 +45,5 @@ app.include_router(papers.router)
 app.include_router(bids.router)
 app.include_router(extensions.router)
 app.include_router(rebuttals.router)
+app.include_router(chair.router)
+app.include_router(decisions.router)
